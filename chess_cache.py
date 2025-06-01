@@ -714,6 +714,9 @@ class AnalysisEngine:
                     info = _parse_uci_info(text)
                     self.db.upsert(board_, info)
 
+                # untuk thread lain tahu bahwa proses sudah berhenti
+                self._stop = True
+
 
         self._thread = Thread(target=process)
         self._thread.daemon = True

@@ -1,78 +1,164 @@
+import argparse
 import fileinput
 import os
+import sqlite3
 from functools import partial
 from io import StringIO
 from time import sleep
-# from tqdm import tqdm
+from typing import Any
 
-from chess import Board
+from chess import Board, Move
 from chess.pgn import read_game
 
 from chess_cache import AnalysisEngine
 
 MAX_FULLMOVE = 6
-MULTIPV = 1
-TRUE_MULTIPV = True
-MINIMAL_DEPTH = 34
-WAIT_TIME = 20
-
-# dapatkan daftar pgn; lalu sort
-list_pgn = []
-for line in fileinput.input():
-    if line[0] == "1":
-        list_pgn.append(line)
-list_pgn.sort()
+MINIMAL_DEPTH = 24
 
 
-try:
-    engine = AnalysisEngine(
-        database_path="./data.sqlite",
-        configs={
-            "EvalFile": "nn-1c0000000000.nnue",
-            "Threads": 4,
-            "Hash": 2048,
-            "MultiPV": MULTIPV,
-        },
+class Todo:
+    def __init__(self, database: str = "eco.sqlite") -> None:
+
+        def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, Any]:
+            d = {}
+            for idx, col in enumerate(cursor.description):
+                d[col[0]] = row[idx]
+            return d
+
+        self.db = sqlite3.connect(
+            database, check_same_thread=False, isolation_level=None
+        )
+        self.db.row_factory = dict_factory
+        script = """
+                PRAGMA journal_mode = wal;
+                PRAGMA synchronous = normal;
+                PRAGMA temp_store = memory;
+                PRAGMA mmap_size = 30000000000;
+                PRAGMA busy_timeout = 10000;
+
+                PRAGMA wal_autocheckpoint;
+
+                CREATE TABLE IF NOT EXISTS todo(
+                    fen TEXT NOT NULL,
+                    PRIMARY KEY (fen)
+                    ) WITHOUT ROWID;
+                """
+        with self.db as conn:
+            for stt in script.split(";"):
+                conn.execute(stt)
+
+        self._board = Board()
+
+    def close(self) -> None:
+        self.db.close()
+
+    def push(self, move_stack: list[Move]):
+        stt = "INSERT OR IGNORE INTO todo (fen) VALUES (?)"
+
+        with self.db as conn:
+            for move in move_stack:
+                self._board.push(move)
+                conn.execute(stt, (self._board.fen(),))
+        self._board.reset()
+
+    def pop(self) -> str | None:
+        # TODO: ini menyedihkan karena kita tidak dapat mengoptimalkan
+        # hash table (posisi yang diambil acak).
+        result = self.db.execute(
+            "SELECT fen FROM todo ORDER BY RANDOM() LIMIT 1"
+        ).fetchone()
+        if not result:
+            return None
+        fen = result["fen"]
+        with self.db as conn:
+            conn.execute("DELETE FROM todo WHERE fen=?", (fen,))
+        return fen
+
+
+def stdin_to_todo(db: Todo):
+    nl_count, text = 0, ""
+
+    # https://gist.github.com/martinth/ed991fb8cdcac3dfadf7
+    for line in fileinput.input(files=("-",)):
+        if nl_count == 2:
+            game = read_game(StringIO(text))
+            eco = game.headers.get("ECO")
+            # jika ada header eco, maka variant adalah standard
+            # walau kita ngambil dari "standard rated games,"
+            # saya ragu dengan PGN tanpa nilai ECO: apakah memang
+            # standar? TODO: pastikan, agar kode berikut bisa
+            # lebih singkat
+            if eco and eco != "?":
+                move_stack = list(game.mainline_moves())
+                db.push(move_stack[: 2 * MAX_FULLMOVE])
+            # reset
+            nl_count, text = 0, ""
+        else:
+            text += line
+            if line == "\n":
+                nl_count += 1
+
+
+def process_todo(db: Todo, engine: AnalysisEngine):
+    board = Board()
+    while True:
+        fen = db.pop()
+        if fen is None:
+            break
+
+        board.set_fen(fen)
+        info = engine.info(board)
+        if info and info[0]["depth"] >= MINIMAL_DEPTH:
+            continue
+
+        engine.start(board, depth=MINIMAL_DEPTH)
+        sleep(1)
+        while not engine._stop:
+            sleep(1)
+        os.system("clear")
+        print(fen)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="Importer",
+        description="Mengumpulkan posisi catur yang perlu dianalisa",
     )
-    get_info = partial(engine.info, multipv=MULTIPV, true_multipv=TRUE_MULTIPV)
+    parser.add_argument(
+        "-a",
+        "--add-first",
+        action="store_true",
+        help="Tambah posisi dari dump Lichess untuk dianalisa",
+    )
+    args = parser.parse_args()
 
-    I = len(list_pgn)
-    for i, line in enumerate(list_pgn):
+    db = Todo()
+    try:
+        print('starting engine...')
+        engine = AnalysisEngine(
+            engine_path="engine/stockfish",
+            database_path="data.sqlite",
+            configs={
+                "EvalFile": "engine/nn-1c0000000000.nnue",
+                "Threads": 4,
+                "Hash": 2048,
+            },
+        )
 
-        # reverse analysis
-        game = read_game(StringIO(line))
-        assert game is not None
+        if args.add_first:
+            print("collecting...")
+            stdin_to_todo(db)
 
-        board = Board()
-        for move in game.mainline_moves():
-            board.push(move)
-            if board.fullmove_number > MAX_FULLMOVE:
-                break
+        print("analyzing...")
+        process_todo(db, engine)
 
-        #if board.move_stack[0].uci() != "e2e4":
-        #    board = Board()  # .reset_board()
-        #    continue
+    except KeyboardInterrupt:
+        print("\ninterrupted!")
 
-        while board.move_stack:
-            depths = [_["depth"] for _ in get_info(board)]
-            if len(depths) < MULTIPV or any(
-                _ < MINIMAL_DEPTH for _ in depths
-            ):
-                os.system('clear')
-                print(f"{i}/{I} ({100*i/I:.2f})", " ".join(_.uci() for _ in board.move_stack))
-                engine.start(board)
-                while True:
-                    # sanity check jumlah multipv
-                    sleep(WAIT_TIME)
-                    depths = [_["depth"] for _ in get_info(board)]
-                    print(depths)
+    finally:
+        result = db.db.execute("SELECT COUNT(fen) AS total FROM todo").fetchone()
+        print(result["total"])
 
-                    if all(_ >= MINIMAL_DEPTH for _ in depths):
-                        break
-            board.pop()
-
-except KeyboardInterrupt:
-    print("\ninterrupted!")
-finally:
-    print("shutting down")
-    engine.shutdown()
+        print("shutting down")
+        engine.shutdown()
+        db.close()
