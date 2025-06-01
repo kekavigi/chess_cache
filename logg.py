@@ -2,15 +2,21 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime
 from json import dump as json_dump
+from os import makedirs
 from typing import Any, Iterator, Never
 
+LOG_DIRECTORY = "./logs"
 now = datetime.now
 
+makedirs(LOG_DIRECTORY, exist_ok=True)
+
+
 def representation(obj: Any) -> dict[str, Any] | str:
-    if hasattr(obj, '__dict__'):
+    if hasattr(obj, "__dict__"):
         return obj.__dict__
     else:
         return repr(obj)
+
 
 @contextmanager
 def log_traceback(extra: Any = None) -> Iterator[Any]:
@@ -38,7 +44,7 @@ def log_traceback(extra: Any = None) -> Iterator[Any]:
             "tb": [],
         }
         if extra is not None:
-            data['extra'] = extra
+            data["extra"] = extra
 
         tb = exc_traceback.tb_next
         while tb:
@@ -54,7 +60,7 @@ def log_traceback(extra: Any = None) -> Iterator[Any]:
             data["tb"].append(info)
             tb = tb.tb_next
 
-        with open(f"./logs/{now().isoformat()}.json", "w") as f:
+        with open(f"{LOG_DIRECTORY}/{now().isoformat()}.json", "w") as f:
             json_dump(data, f, default=representation)
 
         # re-raise
