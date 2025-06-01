@@ -1,16 +1,19 @@
 import sys
 from contextlib import contextmanager
 from datetime import datetime
-from typing import no_type_check
-
-from orjson import dumps
+from json import dump as json_dump
+from typing import Any, Iterator, Never
 
 now = datetime.now
 
+def representation(obj: Any) -> dict[str, Any] | str:
+    if hasattr(obj, '__dict__'):
+        return obj.__dict__
+    else:
+        return repr(obj)
 
-@no_type_check
 @contextmanager
-def log_traceback():
+def log_traceback(extra: Any = None) -> Iterator[Any]:
     # di lingkungan async; ngga bisa traceback sampai root
 
     # started = now()
@@ -22,15 +25,21 @@ def log_traceback():
 
         # Tangkap exception dan traceback
         exc_type, exc_value, exc_traceback = sys.exc_info()
+        assert exc_type
+        assert exc_value
+        assert exc_traceback
 
         # start logging
-        data = {
+        data: dict[str, Any] = {
             # "started": started,
             # "elapsed": (ended - started).total_seconds(),
             "exception": exc_type.__name__,
             "message": exc_value.args[0] if exc_value.args else None,
             "tb": [],
         }
+        if extra is not None:
+            data['extra'] = extra
+
         tb = exc_traceback.tb_next
         while tb:
             frame = tb.tb_frame
@@ -45,8 +54,8 @@ def log_traceback():
             data["tb"].append(info)
             tb = tb.tb_next
 
-        with open(f"./logs/{now().isoformat()}.json", "wb") as f:
-            f.write(dumps(data, default=repr))
+        with open(f"./logs/{now().isoformat()}.json", "w") as f:
+            json_dump(data, f, default=representation)
 
         # re-raise
         raise

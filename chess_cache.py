@@ -38,6 +38,8 @@ from typing import Any
 
 from chess import Board
 
+from logg import log_traceback
+
 # TODO: tidak usah gunakan module chess, kita kurang lebih hanya butuh atribut
 # berikut: fen, set_fen, push_uci, dan copy. Ide, buat representasi papan
 # dalam bentuk bitboard. Empat atribut tersebut seharusnya mudah dibuat, dan
@@ -544,43 +546,45 @@ class UciEngine:
         # agar tidak ada race-condition: board sudah ganti, tapi
         # stdin dari stockfish masih refer to old position? atau itu
         # pratically tidak akan terjadi?
-        while not self._quit:
-            text = std_read().strip()
-            if text == "":
-                continue
 
-            if (
-                (text[:4] == "info")
-                and ("score" in text)
-                and ("pv" in text)
-                and ("bound" not in text)
-            ):
-                # baris info yang bisa disinggah
-                info = _parse_uci_info(text)
-                self.db.upsert(self.board, info)
-                cached = self.db.select(self.board, info["multipv"], with_move=True)
-                assert cached is not None  # agar mypy senang
-                info.update(cached)
-                text = _unparse_uci_info(info)
+        with log_traceback():
+            while not self._quit:
+                text = std_read().strip()
+                if text == "":
+                    continue
 
-            elif text[:8] == "bestmove":
-                # dapatkan bestmove dan ponder dari database
-                # self.board tidak akan dipakai lagi, tidak perlu copy()
-                moves = self.db._get_moves(self.board, depth=1)
+                if (
+                    (text[:4] == "info")
+                    and ("score" in text)
+                    and ("pv" in text)
+                    and ("bound" not in text)
+                ):
+                    # baris info yang bisa disinggah
+                    info = _parse_uci_info(text)
+                    self.db.upsert(self.board, info)
+                    cached = self.db.select(self.board, info["multipv"], with_move=True)
+                    assert cached is not None  # agar mypy senang
+                    info.update(cached)
+                    text = _unparse_uci_info(info)
 
-                # TODO agak chaos kalau GUI ngirim "ponderhit" sedangkan
-                # ponder yang dicache beda dengan yang barusan dianalisis
-                # for simplicity sake, this part is commented, (extra
-                # logic is needed, too):
-                # if len(moves) == 2:
-                #     text = f"bestmove {moves[0]} ponder {moves[1]}"
-                # elif len(moves) == 1:
-                #     ...
-                # else, tampilkan apa yang diberikan mesin saja
+                elif text[:8] == "bestmove":
+                    # dapatkan bestmove dan ponder dari database
+                    # self.board tidak akan dipakai lagi, tidak perlu copy()
+                    moves = self.db._get_moves(self.board, depth=1)
 
-                text = f"bestmove {moves[0]}"
+                    # TODO agak chaos kalau GUI ngirim "ponderhit" sedangkan
+                    # ponder yang dicache beda dengan yang barusan dianalisis
+                    # for simplicity sake, this part is commented, (extra
+                    # logic is needed, too):
+                    # if len(moves) == 2:
+                    #     text = f"bestmove {moves[0]} ponder {moves[1]}"
+                    # elif len(moves) == 1:
+                    #     ...
+                    # else, tampilkan apa yang diberikan mesin saja
 
-            print(text, flush=True)
+                    text = f"bestmove {moves[0]}"
+
+                print(text, flush=True)
 
 
 class AnalysisEngine:
@@ -671,7 +675,7 @@ class AnalysisEngine:
         def process() -> None:
             board_ = board.copy(stack=False)
 
-            try:
+            with log_traceback():
                 # semua output sebelumnya, jika ada, perlu dihapus
                 # self._std_write("stop\n")
                 # self._engine.stdout.flush()  # type: ignore[union-attr]
@@ -691,6 +695,7 @@ class AnalysisEngine:
                 # tapi uh... tidak fleksibel dengan kebutuhan saya
 
                 # proses output dari engine
+                
                 while True:
                     if self._stop:
                         self._std_write("stop\n")
@@ -709,15 +714,6 @@ class AnalysisEngine:
                     info = _parse_uci_info(text)
                     self.db.upsert(board_, info)
 
-            except BrokenPipeError:
-                pass
-            except Exception:
-                # TODO: raise warning
-                # TODO: log state to json file
-                print(board_)
-                print(board_.fen())
-                print(info)
-                raise
 
         self._thread = Thread(target=process)
         self._thread.daemon = True
