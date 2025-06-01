@@ -1,0 +1,4 @@
+{
+    "engine_path": "engine/stockfish",
+    "database_path": "data.sqlite"
+}

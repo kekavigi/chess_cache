@@ -658,7 +658,7 @@ class AnalysisEngine:
             self._thread.join(timeout)
         self._stop = False
 
-    def start(self, board: Board, config: Config = {}) -> None:
+    def start(self, board: Board, depth: int | None = None, config: Config = {}) -> None:
         """Memulai analisa posisi catur oleh mesin catur.
 
         Config yang disertakan disini akan menimpa config yang ditetapkan
@@ -666,8 +666,8 @@ class AnalysisEngine:
 
         Args:
             board: Instance dari `chess.Board`.
-            configs: Dict berisi UCI setoptions untuk dikirim ke
-                mesin catur.
+            depth: Nilai `depth` yang ingin dicari.
+            configs: Dict berisi UCI setoptions untuk dikirim ke mesin catur.
         """
 
         self.stop()
@@ -690,12 +690,12 @@ class AnalysisEngine:
                 while _ != "readyok" and not self._stop:
                     _ = self._std_read().strip()
 
-                self._std_write("go infinite\n")
-                # kalau mau pedantik, seharusnya "go depth <plies>"
-                # tapi uh... tidak fleksibel dengan kebutuhan saya
+                if depth is not None and depth > 0:
+                    self._std_write(f"go depth {depth}\n")
+                else:
+                    self._std_write("go infinite\n")
 
-                # proses output dari engine
-                
+                # proses output dari engine                
                 while True:
                     if self._stop:
                         self._std_write("stop\n")
