@@ -22,8 +22,8 @@ PROG_CHOICE = ["", "SPOIL", "UNDO"]
 BOOK_MOVE = 2
 MULTIPV_USER = 3
 MULTIPV_ENGINE = 7
-MINIMAL_USER_DEPTH = 36
-SCORE_CUTOFF = 50  # cp
+MINIMAL_USER_DEPTH = 24
+SCORE_CUTOFF = 100  # cp
 
 
 class UserInput(PromptBase):
@@ -98,10 +98,10 @@ def fetch(
 def request(engine: AnalysisEngine, board: Board, is_user: bool) -> None:
     depths = [info["depth"] for info in fetch(engine, board)]
 
-    if is_user: # and (not depths or min(depths) < MINIMAL_USER_DEPTH):
-        engine.start(board, {"MultiPV": MULTIPV_USER})
+    if is_user:  # and (not depths or min(depths) < MINIMAL_USER_DEPTH):
+        engine.start(board, config={"MultiPV": MULTIPV_USER})
     elif not is_user:
-        engine.start(board, {"MultiPV": MULTIPV_ENGINE})
+        engine.start(board, config={"MultiPV": MULTIPV_ENGINE})
 
 
 def display_board(board: Board) -> Panel:
@@ -178,12 +178,12 @@ board = Board()
 try:
     print("starting...")
     engine = AnalysisEngine(
-        database_path="./data.sqlite",
+        engine_path="engine/stockfish",
+        database_path="data.sqlite",
         configs={
-            "EvalFile": "nn-1c0000000000.nnue",
+            "EvalFile": "engine/nn-1c0000000000.nnue",
             "Threads": 2,
             "Hash": 2048,
-            "MultiPV": MULTIPV_USER,
         },
     )
 
