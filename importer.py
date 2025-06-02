@@ -9,10 +9,11 @@ from typing import Any
 
 from chess import Board, Move
 from chess.pgn import read_game
+from tqdm import tqdm
 
 from chess_cache import AnalysisEngine
 
-MAX_FULLMOVE = 6
+MAX_FULLMOVE = 4
 MINIMAL_DEPTH = 24
 
 
@@ -79,24 +80,14 @@ def stdin_to_todo(db: Todo):
     nl_count, text = 0, ""
 
     # https://gist.github.com/martinth/ed991fb8cdcac3dfadf7
-    for line in fileinput.input(files=("-",)):
-        if nl_count == 2:
-            game = read_game(StringIO(text))
-            eco = game.headers.get("ECO")
-            # jika ada header eco, maka variant adalah standard
-            # walau kita ngambil dari "standard rated games,"
-            # saya ragu dengan PGN tanpa nilai ECO: apakah memang
-            # standar? TODO: pastikan, agar kode berikut bisa
-            # lebih singkat
-            if eco and eco != "?":
-                move_stack = list(game.mainline_moves())
-                db.push(move_stack[: 2 * MAX_FULLMOVE])
-            # reset
-            nl_count, text = 0, ""
-        else:
-            text += line
-            if line == "\n":
-                nl_count += 1
+    for line in tqdm(fileinput.input(files=("-",)), ncols=0):
+        if line[:3] == "1. ":
+            # pastikan permainan dimulai dari awal
+            game = read_game(StringIO(line))
+            # TODO: apakah ada cara lebih cepat untuk mengambil
+            # 2*MAX_FULLMOVE elemen pertama dari mainline_moves?
+            move_stack = list(game.mainline_moves())
+            db.push(move_stack[: 2 * MAX_FULLMOVE])
 
 
 def process_todo(db: Todo, engine: AnalysisEngine):
@@ -114,9 +105,9 @@ def process_todo(db: Todo, engine: AnalysisEngine):
         engine.start(board, depth=MINIMAL_DEPTH)
         sleep(1)
         while not engine._stop:
-            sleep(1)
-        os.system("clear")
-        print(fen)
+            sleep(0.5)
+        # os.system("clear")
+        # print(fen)
 
 
 if __name__ == "__main__":
@@ -133,21 +124,22 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     db = Todo()
+    engine = None
     try:
-        print('starting engine...')
+        if args.add_first:
+            print("collecting...")
+            stdin_to_todo(db)
+
+        print("starting engine...")
         engine = AnalysisEngine(
             engine_path="engine/stockfish",
             database_path="data.sqlite",
             configs={
                 "EvalFile": "engine/nn-1c0000000000.nnue",
                 "Threads": 4,
-                "Hash": 2048,
+                # "Hash": 1024,
             },
         )
-
-        if args.add_first:
-            print("collecting...")
-            stdin_to_todo(db)
 
         print("analyzing...")
         process_todo(db, engine)
@@ -156,9 +148,9 @@ if __name__ == "__main__":
         print("\ninterrupted!")
 
     finally:
-        result = db.db.execute("SELECT COUNT(fen) AS total FROM todo").fetchone()
-        print(result["total"])
-
         print("shutting down")
-        engine.shutdown()
+        db.db.execute("VACUUM")
         db.close()
+        if engine:
+            # just-in-case Ctrl+C saat collecting
+            engine.shutdown()
