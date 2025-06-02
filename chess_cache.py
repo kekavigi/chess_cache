@@ -28,6 +28,7 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 # Spesifikasi protokol UCI: https://wbec-ridderkerk.nl/html/UCIProtocol.html
 
 import sqlite3
+import sys
 from functools import lru_cache
 from itertools import product
 from json import load as load_json
@@ -49,8 +50,7 @@ from logg import log_traceback
 # saya tidak tahu cara mengatasinya. Kode berikut akan mensuppress pesan tersebut
 # https://stackoverflow.com/questions/16314321/suppressing-printout-of-exception-ignored-message-in-python-3
 # https://stackoverflow.com/questions/24169893/how-to-prevent-exception-ignored-in-module-threading-from-while-settin
-# import sys
-# sys.unraisablehook = lambda unraisable: None
+sys.unraisablehook = lambda unraisable: None
 
 Info = dict[str, Any]
 Config = dict[str, str | int]
@@ -340,6 +340,7 @@ class Database:
 
     def close(self) -> None:
         "Menutup koneksi ke database."
+        # self.db.execute('VACUUM')
         self.db.close()
 
     def select(
@@ -609,6 +610,8 @@ class AnalysisEngine:
                 mesin catur.
         """
 
+        # TODO: try except engine exist
+
         self.db = Database(database_path)
         self._engine = Popen(
             engine_path,
@@ -658,7 +661,9 @@ class AnalysisEngine:
             self._thread.join(timeout)
         self._stop = False
 
-    def start(self, board: Board, depth: int | None = None, config: Config = {}) -> None:
+    def start(
+        self, board: Board, depth: int | None = None, config: Config = {}
+    ) -> None:
         """Memulai analisa posisi catur oleh mesin catur.
 
         Config yang disertakan disini akan menimpa config yang ditetapkan
@@ -675,48 +680,50 @@ class AnalysisEngine:
         def process() -> None:
             board_ = board.copy(stack=False)
 
-            with log_traceback():
-                # semua output sebelumnya, jika ada, perlu dihapus
-                # self._std_write("stop\n")
-                # self._engine.stdout.flush()  # type: ignore[union-attr]
+            try:
+                with log_traceback():
+                    # semua output sebelumnya, jika ada, perlu dihapus
+                    # self._std_write("stop\n")
+                    # self._engine.stdout.flush()  # type: ignore[union-attr]
 
-                # set posisi dan config
-                self._set_options(config)
-                self._std_write(f"position fen {board_.fen()}\n")
+                    # set posisi dan config
+                    self._set_options(config)
+                    self._std_write(f"position fen {board_.fen()}\n")
 
-                # "flush" sampai dapat `readyok`
-                _ = ""
-                self._std_write("isready\n")
-                while _ != "readyok" and not self._stop:
-                    _ = self._std_read().strip()
+                    # "flush" sampai dapat `readyok`
+                    _ = ""
+                    self._std_write("isready\n")
+                    while _ != "readyok" and not self._stop:
+                        _ = self._std_read().strip()
 
-                if depth is not None and depth > 0:
-                    self._std_write(f"go depth {depth}\n")
-                else:
-                    self._std_write("go infinite\n")
+                    if depth is not None and depth > 0:
+                        self._std_write(f"go depth {depth}\n")
+                    else:
+                        self._std_write("go infinite\n")
 
-                # proses output dari engine                
-                while True:
-                    if self._stop:
-                        self._std_write("stop\n")
+                    # proses output dari engine
+                    while True:
+                        if self._stop:
+                            self._std_write("stop\n")
 
-                    text = self._std_read().strip()
-                    if "bestmove" in text:
-                        break
-                    if (
-                        ("score" not in text)
-                        or ("pv" not in text)
-                        or ("bound" in text)
-                        or text[:4] != "info"
-                    ):
-                        continue
+                        text = self._std_read().strip()
+                        if "bestmove" in text:
+                            break
+                        if (
+                            ("score" not in text)
+                            or ("pv" not in text)
+                            or ("bound" in text)
+                            or text[:4] != "info"
+                        ):
+                            continue
 
-                    info = _parse_uci_info(text)
-                    self.db.upsert(board_, info)
+                        info = _parse_uci_info(text)
+                        self.db.upsert(board_, info)
 
-                # untuk thread lain tahu bahwa proses sudah berhenti
-                self._stop = True
-
+                    # untuk thread lain tahu bahwa proses sudah berhenti
+                    self._stop = True
+            except BrokenPipeError:
+                pass
 
         self._thread = Thread(target=process)
         self._thread.daemon = True
@@ -779,7 +786,7 @@ class AnalysisEngine:
     def shutdown(self) -> None:
         "Menghentikan mesin catur dan database."
 
-        self.stop()
+        # self.stop()
         self.db.close()
         self._engine.terminate()
 
