@@ -1,20 +1,20 @@
 import argparse
 import fileinput
-import os
+import re
 import sqlite3
-from functools import partial
-from io import StringIO
 from time import sleep
 from typing import Any
 
-from chess import Board, Move
-from chess.pgn import read_game
+from chess import Board
 from tqdm import tqdm
 
 from chess_cache import AnalysisEngine
 
 MAX_FULLMOVE = 4
 MINIMAL_DEPTH = 24
+
+# Hapus semua komentar, gerakan non-mainline, angka, dan notasi
+RE_PGN_NON_MOVE = re.compile(r"\{.*?\}|\(.*?\)|\d+\.+|\+|\!|\?")
 
 
 class Todo:
@@ -41,7 +41,8 @@ class Todo:
 
                 CREATE TABLE IF NOT EXISTS todo(
                     fen TEXT NOT NULL,
-                    PRIMARY KEY (fen)
+                    fmn INTEGER NOT NULL, -- fullmove number
+                    PRIMARY KEY (fen, fmn)
                     ) WITHOUT ROWID;
                 """
         with self.db as conn:
@@ -53,41 +54,44 @@ class Todo:
     def close(self) -> None:
         self.db.close()
 
-    def push(self, move_stack: list[Move]):
-        stt = "INSERT OR IGNORE INTO todo (fen) VALUES (?)"
+    def push(self, move_stack: list[str]):
+        stt = "INSERT OR IGNORE INTO todo (fen, fmn) VALUES (?, ?)"
 
-        with self.db as conn:
-            for move in move_stack:
-                self._board.push(move)
-                conn.execute(stt, (self._board.fen(),))
+        try:
+            with self.db as conn:
+                for move in move_stack:
+                    self._board.push_san(move)
+                    conn.execute(stt, (self._board.fen(), self._board.fullmove_number))
+        except:
+            print(move_stack)
+            raise
         self._board.reset()
 
     def pop(self) -> str | None:
         # TODO: ini menyedihkan karena kita tidak dapat mengoptimalkan
         # hash table (posisi yang diambil acak).
         result = self.db.execute(
-            "SELECT fen FROM todo ORDER BY RANDOM() LIMIT 1"
+            "SELECT * FROM todo ORDER BY fmn ASC, RANDOM() LIMIT 1"
         ).fetchone()
         if not result:
             return None
-        fen = result["fen"]
         with self.db as conn:
-            conn.execute("DELETE FROM todo WHERE fen=?", (fen,))
-        return fen
+            conn.execute("DELETE FROM todo WHERE fen=:fen AND fmn=:fmn", result)
+        return result["fen"]
 
 
 def stdin_to_todo(db: Todo):
-    nl_count, text = 0, ""
-
     # https://gist.github.com/martinth/ed991fb8cdcac3dfadf7
     for line in tqdm(fileinput.input(files=("-",)), ncols=0):
+
+        # pastikan permainan dimulai dari awal
         if line[:3] == "1. ":
-            # pastikan permainan dimulai dari awal
-            game = read_game(StringIO(line))
-            # TODO: apakah ada cara lebih cepat untuk mengambil
-            # 2*MAX_FULLMOVE elemen pertama dari mainline_moves?
-            move_stack = list(game.mainline_moves())
-            db.push(move_stack[: 2 * MAX_FULLMOVE])
+            # tidak menggunakan chess.pgn.read_game, karena kita cuma butuh
+            # mainline move. Cara 'manual' ini mempercepat dari 7k iter/s
+            # menjadi 21.5k iter/s.
+            moves = RE_PGN_NON_MOVE.sub("", line).split()
+            moves = moves[: min(len(moves) - 1, 2 * MAX_FULLMOVE)]
+            db.push(moves)
 
 
 def process_todo(db: Todo, engine: AnalysisEngine):
@@ -107,7 +111,7 @@ def process_todo(db: Todo, engine: AnalysisEngine):
         while not engine._stop:
             sleep(0.5)
         # os.system("clear")
-        # print(fen)
+        print(fen)
 
 
 if __name__ == "__main__":
