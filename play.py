@@ -81,7 +81,7 @@ def fetch(
     # hanya hasilkan uci, score, depth yang bagus
 
     multipv = MULTIPV_USER if cutoff is not None else MULTIPV_ENGINE
-    suggests = engine.info(board, multipv=multipv, true_multipv=False)
+    suggests = engine.info(board.fen(), multipv=multipv, true_multipv=False)
     if cutoff is None or not suggests:
         return suggests
 
@@ -99,9 +99,9 @@ def request(engine: AnalysisEngine, board: Board, is_user: bool) -> None:
     depths = [info["depth"] for info in fetch(engine, board)]
 
     if is_user:  # and (not depths or min(depths) < MINIMAL_USER_DEPTH):
-        engine.start(board, config={"MultiPV": MULTIPV_USER})
+        engine.start(board.fen(), config={"MultiPV": MULTIPV_USER})
     elif not is_user:
-        engine.start(board, config={"MultiPV": MULTIPV_ENGINE})
+        engine.start(board.fen(), config={"MultiPV": MULTIPV_ENGINE})
 
 
 def display_board(board: Board) -> Panel:

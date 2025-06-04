@@ -103,18 +103,16 @@ def stdin_to_todo(db: Todo):
 
 
 def process_todo(db: Todo, engine: AnalysisEngine):
-    board = Board()
     while True:
         fen = db.pop()
         if fen is None:
             break
 
-        board.set_fen(fen)
-        info = engine.info(board)
+        info = engine.info(fen)
         if info and info[0]["depth"] >= MINIMAL_DEPTH:
             continue
 
-        engine.start(board, depth=MINIMAL_DEPTH)
+        engine.start(fen, depth=MINIMAL_DEPTH)
         sleep(1)
         while not engine._stop:
             sleep(0.5)

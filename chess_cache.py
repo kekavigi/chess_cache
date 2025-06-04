@@ -349,14 +349,14 @@ class Database:
 
     def select(
         self,
-        board: Board,
+        fen: str,
         multipv: int = 1,
         with_move: bool = False,
     ) -> Info | None:
         """Mendapatkan info dari suatu posisi catur.
 
         Args:
-            board: Instance `chess.Board` dari posisi catur.
+            fen: Posisi catur dalam notasi FEN.
             multipv: Urutan principal move yang ingin dicari.
             with_move: Pilihan untuk menyertakan daftar bestmove.
         """
@@ -365,48 +365,33 @@ class Database:
             SELECT multipv, depth, score, move
             FROM board WHERE fen=? AND multipv=?
         """
-        efen = encode_fen(board.fen())
+        efen = encode_fen(fen)
         info = self.sql.execute(stt, (efen, multipv)).fetchone()  # type: Info | None
-
         if not info:
             return None
 
         # dapatkan rangkaian balasan
         pv = NUM_TO_UCI.get(info.pop("move"))
-        if pv:
-            info["pv"] = [pv]
-            if with_move:
-                board_ = board.copy(stack=False)
-                board_.push_uci(pv)
-                info["pv"].extend(
-                    self._get_moves(
-                        board=board_,
-                        depth=info["depth"] - 1,
-                    )
-                )
+        info["pv"] = [pv] if pv is not None else []
+        if pv is not None and with_move:
+            stt = "SELECT move FROM board WHERE fen=? AND multipv=1"
+            board = Board(fen)
+            depth = info["depth"] - 1
+
+            while depth > 0:
+                # dapatkan next best move
+                board.push_uci(pv)  # type: ignore[arg-type]
+                efen = encode_fen(board.fen())
+                result = self.sql.execute(stt, (efen,)).fetchone()
+                if not result:
+                    break
+                pv = NUM_TO_UCI.get(result["move"])
+                info["pv"].append(pv)
+                depth -= 1
+
         return info
 
-    def _get_moves(self, board: Board, depth: int) -> list[str]:
-        # Dapatkan rangkaian best moves untuk posisi board
-        # WARNING: variabel board bisa berubah!
-
-        stt = "SELECT move FROM board WHERE fen=? AND multipv=1"
-        move_stack = []
-
-        while depth > 0:
-            # dapatkan data singgahan
-            efen = encode_fen(board.fen())
-            result = self.sql.execute(stt, (efen,)).fetchone()
-            if not result:
-                break
-            result = NUM_TO_UCI.get(result["move"])
-
-            move_stack.append(result)
-            board.push_uci(result)
-            depth -= 1
-        return move_stack
-
-    def upsert(self, board: Board, info: Info) -> None:
+    def upsert(self, fen: str, info: Info) -> None:
         """Menyimpan atau memperbarui info dari suatu posisi catur.
 
         Lebih tepatnya, `UPSERT OR IGNORE INTO` dari semua move `pv` di info.
@@ -415,7 +400,7 @@ class Database:
         dan memiliki data yang lebih baik daripada hasil ekstrapolasi info.
 
         Args:
-            board: Instance `chess.Board` dari posisi catur.
+            fen: Posisi catur dalam notasi FEN.
             multipv: Urutan principal move yang ingin dicari.
             with_move: Pilihan untuk menyertakan daftar bestmove.
         """
@@ -428,7 +413,7 @@ class Database:
                 score = excluded.score,
                 move  = excluded.move
         """
-        board_ = board.copy()
+        board = Board(fen)
         info_ = info.copy()
         # info_ akan digunakan sebagai "taksiran" hasil analisis mesin catur
         # untuk semua move di info['pv'], dengan beberapa penyesuaian
@@ -440,8 +425,10 @@ class Database:
                 if info_["depth"] == 0:
                     break
 
+                fen = board.fen()
+
                 # bandingkan dengan hasil singgahan
-                old_info = self.select(board_, info_["multipv"])
+                old_info = self.select(fen, info_["multipv"])
                 if old_info and old_info["depth"] > info_["depth"]:
                     # hentikan menyinggah karena posisi ini pernah dianalisis
                     # dan depthnya lebih besar daripada depth hasil taksiran
@@ -453,12 +440,12 @@ class Database:
                     break
 
                 # untuk iterasi pertama; induk
-                info_["fen"] = encode_fen(board_.fen())
+                info_["fen"] = encode_fen(fen)
                 info_["move"] = UCI_TO_NUM[move]
                 conn.execute(stt, info_)
 
                 # untuk semua iterasi berikutnya; keturunannya
-                board_.push_uci(move)
+                board.push_uci(move)
                 info_["multipv"] = 1  # walau multipv induk mungkin !=1
                 info_["score"] *= -1  # ubah sudut pandang score
                 info_["depth"] -= 1  # kurangi depth
@@ -531,7 +518,7 @@ class UciEngine:
             bufsize=1,
         )
         self.db = Database(settings.get("database_path", ":memory:"))
-        self.board = Board()
+        self.fen = STARTING_FEN
         self._quit = False
 
         thread = Thread(target=self.parse_output)
@@ -564,13 +551,14 @@ class UciEngine:
 
                 i = split.index("moves") if "moves" in split else -1
                 if split[1] == "startpos":
-                    self.board.set_fen(STARTING_FEN)
+                    self.fen = STARTING_FEN
                 elif split[1] == "fen":
-                    fen = " ".join(split[2:i])
-                    self.board.set_fen(fen)
+                    self.fen = " ".join(split[2:i])
                 if i > 0:
+                    board = Board(self.fen)
                     for move in split[i + 1 :]:
-                        self.board.push_uci(move)
+                        board.push_uci(move)
+                    self.fen = board.fen()
 
             std_write(f"{command}\n")
 
@@ -591,6 +579,8 @@ class UciEngine:
                 if text == "":
                     continue
 
+                cached: Info | None
+                
                 if (
                     (text[:4] == "info")
                     and ("score" in text)
@@ -599,16 +589,14 @@ class UciEngine:
                 ):
                     # baris info yang bisa disinggah
                     info = _parse_uci_info(text)
-                    self.db.upsert(self.board, info)
-                    cached = self.db.select(self.board, info["multipv"], with_move=True)
+                    self.db.upsert(self.fen, info)
+                    cached = self.db.select(self.fen, info["multipv"], with_move=True)
                     assert cached is not None  # agar mypy senang
                     info.update(cached)
                     text = _unparse_uci_info(info)
 
                 elif text[:8] == "bestmove":
                     # dapatkan bestmove dan ponder dari database
-                    # self.board tidak akan dipakai lagi, tidak perlu copy()
-                    moves = self.db._get_moves(self.board, depth=1)
 
                     # TODO agak chaos kalau GUI ngirim "ponderhit" sedangkan
                     # ponder yang dicache beda dengan yang barusan dianalisis
@@ -620,7 +608,9 @@ class UciEngine:
                     #     ...
                     # else, tampilkan apa yang diberikan mesin saja
 
-                    text = f"bestmove {moves[0]}"
+                    cached = self.db.select(self.fen, with_move=False)
+                    if cached and cached['pv']:
+                        text = f"bestmove {cached['pv'][0]}"
 
                 print(text, flush=True)
 
@@ -699,7 +689,7 @@ class AnalysisEngine:
         self._stop = False
 
     def start(
-        self, board: Board, depth: int | None = None, config: Config = {}
+        self, fen: str, depth: int | None = None, config: Config = {}
     ) -> None:
         """Memulai analisa posisi catur oleh mesin catur.
 
@@ -707,7 +697,7 @@ class AnalysisEngine:
         di __init__(), jika ada.
 
         Args:
-            board: Instance dari `chess.Board`.
+            fen: (Daftar) posisi catur dalam notasi FEN.
             depth: Nilai `depth` yang ingin dicari.
             configs: Dict berisi UCI setoptions untuk dikirim ke mesin catur.
         """
@@ -715,8 +705,6 @@ class AnalysisEngine:
         self.stop()
 
         def process() -> None:
-            board_ = board.copy(stack=False)
-
             try:
                 with log_traceback():
                     # semua output sebelumnya, jika ada, perlu dihapus
@@ -725,7 +713,7 @@ class AnalysisEngine:
 
                     # set posisi dan config
                     self._set_options(config)
-                    self._std_write(f"position fen {board_.fen()}\n")
+                    self._std_write(f"position fen {fen}\n")
 
                     # "flush" sampai dapat `readyok`
                     _ = ""
@@ -755,7 +743,7 @@ class AnalysisEngine:
                             continue
 
                         info = _parse_uci_info(text)
-                        self.db.upsert(board_, info)
+                        self.db.upsert(fen, info)
 
                     # untuk thread lain tahu bahwa proses sudah berhenti
                     self._stop = True
@@ -768,7 +756,7 @@ class AnalysisEngine:
 
     def info(
         self,
-        board: Board,
+        fen: str,
         multipv: int = 1,
         true_multipv: bool = True,
         with_move: bool = False,
@@ -776,7 +764,7 @@ class AnalysisEngine:
         """Mendapatkan singgahan hasil analisa posisi catur.
 
         Args:
-            board: Instance dari `chess.Board`.
+            fen: Posisi catur dalam notasi FEN.
             multipv: Urutan principal move yang ingin dicari.
             true_multipv: Pilihan untuk hanya menggunakan info MultiPV yang
                 dihasilkan oleh mesin catur.
@@ -789,7 +777,7 @@ class AnalysisEngine:
             results = []
             for pv in range(multipv):
                 info = self.db.select(
-                    board,
+                    fen,
                     multipv=pv + 1,
                     with_move=with_move,
                 )
@@ -798,17 +786,17 @@ class AnalysisEngine:
         else:
             # pada dasarnya, "SELECT * FROM board WHERE fen=fen AND multipv=1";
             # dengan fen adalah semua anak yang mungkin dari posisi saat ini
-            board_ = board.copy()
+            board = Board(fen)
             results = []
-            for move in board_.legal_moves:
-                board_.push(move)
-                info = self.db.select(board_, multipv=1, with_move=with_move)
+            for move in board.legal_moves:
+                board.push(move)
+                info = self.db.select(board.fen(), multipv=1, with_move=with_move)
                 if info:
                     info["score"] *= -1
                     info["depth"] += 1
                     info["pv"].insert(0, move.uci())
                     results.append(info)
-                board_.pop()
+                board.pop()
 
             # sort
             results.sort(key=lambda d: (d["depth"], d["score"]), reverse=True)

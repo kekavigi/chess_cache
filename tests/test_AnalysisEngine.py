@@ -56,29 +56,29 @@ def test_sanity(ae_file_empty):
     assert result["total"] == 0
 
 
-@pytest.mark.skip(reason="slow")
+# @pytest.mark.skip(reason="slow")
 def test_cache_is_working(ae_file_empty):
     engine = ae_file_empty
-    board = Board()
+    fen = Board().fen()
 
-    engine.start(board, depth=10)
+    engine.start(fen, depth=10)
     sleep(2)
-    result = engine.info(board)
+    result = engine.info(fen)
     assert len(result) == 1
     assert result[0]["depth"] == 10
 
     # depth yang disinggah tidak berubah jika ada
     # analisa dengan depth yang lebih kecil
-    engine.start(board, depth=5)
+    engine.start(fen, depth=5)
     sleep(2)
-    result = engine.info(board)
+    result = engine.info(fen)
     assert len(result) == 1
     assert result[0]["depth"] == 10
 
     # tapi berubah jika depthnya lebih besar
-    engine.start(board, depth=15)
+    engine.start(fen, depth=15)
     sleep(2)
-    result = engine.info(board, with_move=True)
+    result = engine.info(fen, with_move=True)
     assert len(result) == 1
     assert result[0]["depth"] == 15
     # ini ngga bisa diprediksi, kecuali depth=infinite
