@@ -54,7 +54,7 @@ class Todo:
     def close(self) -> None:
         self.db.close()
 
-    def push(self, move_stack: list[str]):
+    def insert(self, move_stack: list[str]):
         stt = "INSERT OR IGNORE INTO todo (fen, fmn) VALUES (?, ?)"
 
         try:
@@ -67,17 +67,25 @@ class Todo:
             raise
         self._board.reset()
 
-    def pop(self) -> str | None:
+    def random(self, limit: int = 1) -> list[str]:
         # TODO: ini menyedihkan karena kita tidak dapat mengoptimalkan
         # hash table (posisi yang diambil acak).
-        result = self.db.execute(
-            "SELECT * FROM todo ORDER BY fmn ASC, RANDOM() LIMIT 1"
-        ).fetchone()
-        if not result:
-            return None
+        results = self.db.execute(
+            "SELECT fen FROM todo ORDER BY fmn ASC, RANDOM() LIMIT ?", (limit,)
+        ).fetchall()
+        return [_["fen"] for _ in results]
+
+    def delete(self, fen: str):
         with self.db as conn:
-            conn.execute("DELETE FROM todo WHERE fen=:fen AND fmn=:fmn", result)
-        return result["fen"]
+            conn.execute("DELETE FROM todo WHERE fen=?", (fen,))
+
+    def pop(self, board: Board | None = None) -> str | None:
+        results = self.random()
+        if not results:
+            return None
+        fen = results[0]
+        self.delete(fen)
+        return fen
 
 
 def stdin_to_todo(db: Todo):
@@ -91,7 +99,7 @@ def stdin_to_todo(db: Todo):
             # menjadi 21.5k iter/s.
             moves = RE_PGN_NON_MOVE.sub("", line).split()
             moves = moves[: min(len(moves) - 1, 2 * MAX_FULLMOVE)]
-            db.push(moves)
+            db.insert(moves)
 
 
 def process_todo(db: Todo, engine: AnalysisEngine):

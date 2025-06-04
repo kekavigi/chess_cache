@@ -29,6 +29,7 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 
 import sqlite3
 import sys
+from base64 import b85decode, b85encode
 from functools import lru_cache
 from itertools import product
 from json import load as load_json
@@ -284,7 +285,7 @@ class Database:
         db: koneksi ke database SQLite
     """
 
-    def __init__(self, database: str = ":memory:") -> None:
+    def __init__(self, uri: str = ":memory:") -> None:
         """Membuat koneksi ke database dengan URI `database`.
 
         Membuat instance `sqlite3.Connection`, yang dapat diakses oleh
@@ -301,7 +302,7 @@ class Database:
         Kolom `move` berisi langkah bidak dalam notasi UCI yang terenkode.
 
         Args:
-            database: URI lokasi database.
+            uri: URI lokasi database.
         """
 
         def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, Any]:
@@ -310,10 +311,8 @@ class Database:
                 d[col[0]] = row[idx]
             return d
 
-        self.db = sqlite3.connect(
-            database, check_same_thread=False, isolation_level=None
-        )
-        self.db.row_factory = dict_factory
+        self.sql = sqlite3.connect(uri, check_same_thread=False, isolation_level=None)
+        self.sql.row_factory = dict_factory
         script = """
                 PRAGMA journal_mode = wal;
                 PRAGMA synchronous = normal;
@@ -334,14 +333,19 @@ class Database:
                 """
         # https://stackoverflow.com/questions/15856976/transactions-with-python-sqlite3
         # sederhananya, jangan pakai executescript()
-        with self.db as conn:
+        with self.sql as conn:
             for stt in script.split(";"):
                 conn.execute(stt)
 
+        cur = self.sql.execute(
+            'SELECT file FROM pragma_database_list WHERE name="main"'
+        )
+        self._is_memory = not cur.fetchone()["file"]
+
     def close(self) -> None:
         "Menutup koneksi ke database."
-        # self.db.execute('VACUUM')
-        self.db.close()
+        # self.sql.execute('VACUUM')
+        self.sql.close()
 
     def select(
         self,
@@ -362,7 +366,7 @@ class Database:
             FROM board WHERE fen=? AND multipv=?
         """
         efen = encode_fen(board.fen())
-        info = self.db.execute(stt, (efen, multipv)).fetchone()  # type: Info | None
+        info = self.sql.execute(stt, (efen, multipv)).fetchone()  # type: Info | None
 
         if not info:
             return None
@@ -392,7 +396,7 @@ class Database:
         while depth > 0:
             # dapatkan data singgahan
             efen = encode_fen(board.fen())
-            result = self.db.execute(stt, (efen,)).fetchone()
+            result = self.sql.execute(stt, (efen,)).fetchone()
             if not result:
                 break
             result = NUM_TO_UCI.get(result["move"])
@@ -429,7 +433,7 @@ class Database:
         # info_ akan digunakan sebagai "taksiran" hasil analisis mesin catur
         # untuk semua move di info['pv'], dengan beberapa penyesuaian
 
-        with self.db as conn:
+        with self.sql as conn:
             for num, move in enumerate(info_["pv"]):
 
                 # loop sampai nol
@@ -459,6 +463,39 @@ class Database:
                 info_["score"] *= -1  # ubah sudut pandang score
                 info_["depth"] -= 1  # kurangi depth
         return
+
+    def to_json(self) -> list[Info]:
+        cur = self.sql.execute("SELECT * FROM board")
+        results = []
+        for row in cur.fetchall():
+            row["fen"] = b85encode(row["fen"]).decode("utf-8")
+            results.append(row)
+        return results
+
+    def from_json(self, json: list[Info]) -> None:
+        stt = """
+            INSERT INTO board (fen, multipv, depth, score, move)
+            VALUES (:fen, :multipv, :depth, :score, :move)
+            ON CONFLICT (fen, multipv) DO UPDATE SET
+                depth = excluded.depth,
+                score = excluded.score,
+                move  = excluded.move
+            WHERE excluded.depth >= depth
+        """
+        with self.sql as conn:
+            for row_ in json:
+                row = row_.copy()
+                row["fen"] = b85decode(row["fen"])
+                conn.execute(stt, row)
+
+    def reset_db(self) -> None:
+        if not self._is_memory:
+            # too dangerous
+            raise RuntimeError
+
+        with self.sql as conn:
+            conn.execute("DELETE FROM board")
+            conn.execute("VACUUM")
 
 
 class UciEngine:
