@@ -379,16 +379,23 @@ class Database:
             board = Board(fen)
             depth = info["depth"] - 1
 
-            while depth > 0:
-                # dapatkan next best move
-                board.push_uci(pv)  # type: ignore[arg-type]
-                efen = encode_fen(board.fen())
-                result = self.sql.execute(stt, (efen,)).fetchone()
-                if not result:
-                    break
-                pv = NUM_TO_UCI.get(result["move"])
-                info["pv"].append(pv)
-                depth -= 1
+            try:
+                while depth > 0:
+                    # dapatkan next best move
+                    board.push_uci(pv)  # type: ignore[arg-type]
+
+                    efen = encode_fen(board.fen())
+                    result = self.sql.execute(stt, (efen,)).fetchone()
+                    if not result:
+                        break
+                    pv = NUM_TO_UCI.get(result["move"])
+                    info["pv"].append(pv)
+                    depth -= 1
+            except:
+                # TODO: database bermasalah, tapi dengan mengabaikannya
+                # akan heal sendiri, kenapa? apakah iya memang heal? 
+                # race condition dengan upsert di UciEngine.parse_output?
+                pass
 
         return info
 
