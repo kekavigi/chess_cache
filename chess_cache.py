@@ -36,6 +36,7 @@ from json import load as load_json
 from re import compile as regex_compile
 from subprocess import PIPE, Popen
 from threading import Thread
+from time import sleep
 from typing import Any
 
 from chess import Board
@@ -580,7 +581,7 @@ class UciEngine:
                     continue
 
                 cached: Info | None
-                
+
                 if (
                     (text[:4] == "info")
                     and ("score" in text)
@@ -609,7 +610,7 @@ class UciEngine:
                     # else, tampilkan apa yang diberikan mesin saja
 
                     cached = self.db.select(self.fen, with_move=False)
-                    if cached and cached['pv']:
+                    if cached and cached["pv"]:
                         text = f"bestmove {cached['pv'][0]}"
 
                 print(text, flush=True)
@@ -688,8 +689,12 @@ class AnalysisEngine:
             self._thread.join(timeout)
         self._stop = False
 
+    def wait(self, delta: float = 1):
+        while not self._stop:
+            sleep(delta)
+
     def start(
-        self, fen: str, depth: int | None = None, config: Config = {}
+        self, fen: str | list[str], depth: int | None = None, config: Config = {}
     ) -> None:
         """Memulai analisa posisi catur oleh mesin catur.
 
@@ -703,47 +708,49 @@ class AnalysisEngine:
         """
 
         self.stop()
+        fens = [fen] if isinstance(fen, str) else fen
+
+        if len(fens) > 1 and depth is None:
+            # sanity-check biar ngga infinite loop
+            raise ValueError("Depth harus ada untuk analisa banyak FEN")
 
         def process() -> None:
             try:
                 with log_traceback():
-                    # semua output sebelumnya, jika ada, perlu dihapus
-                    # self._std_write("stop\n")
-                    # self._engine.stdout.flush()  # type: ignore[union-attr]
-
-                    # set posisi dan config
                     self._set_options(config)
-                    self._std_write(f"position fen {fen}\n")
 
-                    # "flush" sampai dapat `readyok`
-                    _ = ""
-                    self._std_write("isready\n")
-                    while _ != "readyok" and not self._stop:
-                        _ = self._std_read().strip()
+                    for fen in fens:
+                        self._std_write(f"position fen {fen}\n")
 
-                    if depth is not None and depth > 0:
-                        self._std_write(f"go depth {depth}\n")
-                    else:
-                        self._std_write("go infinite\n")
+                        # "flush" sampai dapat `readyok`
+                        _ = ""
+                        self._std_write("isready\n")
+                        while _ != "readyok" and not self._stop:
+                            _ = self._std_read().strip()
 
-                    # proses output dari engine
-                    while True:
-                        if self._stop:
-                            self._std_write("stop\n")
+                        if depth is not None and depth > 0:
+                            self._std_write(f"go depth {depth}\n")
+                        else:
+                            self._std_write("go infinite\n")
 
-                        text = self._std_read().strip()
-                        if "bestmove" in text:
-                            break
-                        if (
-                            ("score" not in text)
-                            or ("pv" not in text)
-                            or ("bound" in text)
-                            or text[:4] != "info"
-                        ):
-                            continue
+                        # proses output dari engine
+                        while True:
+                            if self._stop:
+                                self._std_write("stop\n")
 
-                        info = _parse_uci_info(text)
-                        self.db.upsert(fen, info)
+                            text = self._std_read().strip()
+                            if "bestmove" in text:
+                                break
+                            if (
+                                ("score" not in text)
+                                or ("pv" not in text)
+                                or ("bound" in text)
+                                or text[:4] != "info"
+                            ):
+                                continue
+
+                            info = _parse_uci_info(text)
+                            self.db.upsert(fen, info)
 
                     # untuk thread lain tahu bahwa proses sudah berhenti
                     self._stop = True

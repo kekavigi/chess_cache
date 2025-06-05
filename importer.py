@@ -70,8 +70,9 @@ class Todo:
     def random(self, limit: int = 1) -> list[str]:
         # TODO: ini menyedihkan karena kita tidak dapat mengoptimalkan
         # hash table (posisi yang diambil acak).
+        assert isinstance(limit, int)
         results = self.db.execute(
-            "SELECT fen FROM todo ORDER BY fmn ASC, RANDOM() LIMIT ?", (limit,)
+            f"SELECT fen FROM todo ORDER BY fmn ASC, RANDOM() LIMIT {limit}"
         ).fetchall()
         return [_["fen"] for _ in results]
 

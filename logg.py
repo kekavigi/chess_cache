@@ -13,6 +13,7 @@ makedirs(LOG_DIRECTORY, exist_ok=True)
 
 # TODO: turn off logging when testing
 
+
 def representation(obj: Any) -> dict[str, Any] | str:
     if hasattr(obj, "__dict__"):
         return obj.__dict__

@@ -62,7 +62,8 @@ def test_cache_is_working(ae_file_empty):
     fen = Board().fen()
 
     engine.start(fen, depth=10)
-    sleep(2)
+    engine.wait()
+
     result = engine.info(fen)
     assert len(result) == 1
     assert result[0]["depth"] == 10
@@ -70,20 +71,46 @@ def test_cache_is_working(ae_file_empty):
     # depth yang disinggah tidak berubah jika ada
     # analisa dengan depth yang lebih kecil
     engine.start(fen, depth=5)
-    sleep(2)
+    engine.wait()
+
     result = engine.info(fen)
     assert len(result) == 1
     assert result[0]["depth"] == 10
 
     # tapi berubah jika depthnya lebih besar
     engine.start(fen, depth=15)
-    sleep(2)
+    engine.wait()
     result = engine.info(fen, with_move=True)
     assert len(result) == 1
     assert result[0]["depth"] == 15
     # ini ngga bisa diprediksi, kecuali depth=infinite
     # dan given more time, biar move_stack-nya stabil
     # assert len(result[0]["pv"]) >= 15
+
+
+def test_batch_analysis(ae_file_empty):
+    engine = ae_file_empty
+    fens = [
+        "rnbqkb1r/pppppppp/7n/8/8/5P1N/PPPPP1PP/RNBQKB1R b KQkq - 2 2",
+        "rnbqkbnr/ppppp1pp/5p2/8/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 0 2",
+        "rnbqkbnr/pppp1ppp/8/4p3/7P/3P4/PPP1PPP1/RNBQKBNR b KQkq - 0 2",
+        "rnbqkbnr/pp1ppppp/2p5/8/8/P2P4/1PP1PPPP/RNBQKBNR b KQkq - 0 2",
+        "rnbqkbnr/ppppp1pp/5p2/8/1P6/4P3/P1PP1PPP/RNBQKBNR b KQkq - 0 2",
+        "rnbqkbnr/ppppp1pp/8/5p2/8/1P5N/P1PPPPPP/RNBQKB1R b KQkq - 0 2",
+        "rnbqkbnr/1ppppppp/p7/8/4P3/7N/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+        "rnbqkbnr/pppp1ppp/8/4p3/6P1/5N2/PPPPPP1P/RNBQKB1R b KQkq - 1 2",
+        "rnbqkbnr/ppppppp1/8/7p/8/3PP3/PPP2PPP/RNBQKBNR b KQkq - 0 2",
+    ]
+    with pytest.raises(ValueError):
+        engine.start(fens)
+
+    engine.start(fens, depth=10)
+    engine.wait()
+
+    for fen in fens:
+        result = engine.info(fen)
+        assert len(result) == 1
+        assert result[0]["depth"] == 10
 
 
 # TODO: test kasus checkmate
