@@ -393,7 +393,7 @@ class Database:
                     depth -= 1
             except:
                 # TODO: database bermasalah, tapi dengan mengabaikannya
-                # akan heal sendiri, kenapa? apakah iya memang heal? 
+                # akan heal sendiri, kenapa? apakah iya memang heal?
                 # race condition dengan upsert di UciEngine.parse_output?
                 pass
 
@@ -553,20 +553,36 @@ class UciEngine:
                 self._quit = True
                 break
 
-            split = command.split(" ")
-            if split[0] == "position":
-                # perbarui posisi board
+            parts = command.split(maxsplit=2)
+            if parts[0] == "position":
+                try:
+                    if len(parts) == 1:
+                        # assume maksud adalah startpos
+                        parts.append("startpos")
 
-                i = split.index("moves") if "moves" in split else -1
-                if split[1] == "startpos":
-                    self.fen = STARTING_FEN
-                elif split[1] == "fen":
-                    self.fen = " ".join(split[2:i])
-                if i > 0:
-                    board = Board(self.fen)
-                    for move in split[i + 1 :]:
-                        board.push_uci(move)
-                    self.fen = board.fen()
+                    _, *final = parts[1:]
+                    # _ akan berisi 'startpos' atau 'fen'
+
+                    self.fen = ""
+                    if final:
+                        self.fen, *final = final[0].split("moves")
+                        # harusnya .split(' moves') but eh whatever
+                        # self.fen mungkin empty string, yang artinya STARTING_FEN
+                        # atau posisi dalam notasi FEN. final selanjutnya berisi
+                        # daftar moves, atau kosong
+                    if not self.fen:
+                        self.fen = STARTING_FEN
+
+                    board = Board(self.fen)  # sekalian ngecek keabsahan FEN
+                    if final:
+                        # sesuaikan fen
+                        for move in final[0].split(" "):
+                            if not move:
+                                continue
+                            board.push_uci(move)
+                        self.fen = board.fen()
+                except:
+                    raise ValueError("Invalid FEN or moves")
 
             std_write(f"{command}\n")
 
