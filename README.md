@@ -6,6 +6,9 @@ Beberapa hal yang ingin dikembangkan:
 * Unit test yang lebih banyak.
 * Menggabungkan dua atau lebih database singgahan. Jika nama dan versi mesin catur yang digunakan sama (misal `Stockfish 17.1`), Ini seharusnya mudah: pilih `(multipv, fen)` dengan `depth` tertinggi di semua database (jika ada), untuk semua `(multipv, fen)`.
 * Membuat antarmuka untuk melihat isi database singgahan dan mengelolanya (menjalankan `VACUUM`, menganalisis posisi secara manual, dsb.).
+* Mengimport analisa dari Lichess.
+* Mengimport semua pgn game (suatu user atau semacamnya) dari Lichess/chess.com, untuk dianalisa.
+* Menghapus kolom `multipv` dari table database, tanpa membuat peforma menjadi lebih buruk.
 
 ## Usaha terkait
 
