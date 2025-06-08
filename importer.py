@@ -1,167 +1,85 @@
-import argparse
 import fileinput
-import re
-import sqlite3
-from time import sleep
-from typing import Any
+import os
+from itertools import cycle
+from multiprocessing import Pool
+from random import shuffle
 
-from chess import Board
-from tqdm import tqdm
+from chess import IllegalMoveError
+from orjson import loads
 
-from chess_cache import AnalysisEngine
+from chess_cache import MATE_SCORE, Database
+from logg import log_traceback
 
-MAX_FULLMOVE = 4
-MINIMAL_DEPTH = 24
-
-# Hapus semua komentar, gerakan non-mainline, angka, dan notasi
-RE_PGN_NON_MOVE = re.compile(r"\{.*?\}|\(.*?\)|\d+\.+|\+|\!|\?")
-
-
-class Todo:
-    def __init__(self, database: str = "eco.sqlite") -> None:
-
-        def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, Any]:
-            d = {}
-            for idx, col in enumerate(cursor.description):
-                d[col[0]] = row[idx]
-            return d
-
-        self.db = sqlite3.connect(
-            database, check_same_thread=False, isolation_level=None
-        )
-        self.db.row_factory = dict_factory
-        script = """
-                PRAGMA journal_mode = wal;
-                PRAGMA synchronous = normal;
-                PRAGMA temp_store = memory;
-                PRAGMA mmap_size = 30000000000;
-                PRAGMA busy_timeout = 10000;
-
-                PRAGMA wal_autocheckpoint;
-
-                CREATE TABLE IF NOT EXISTS todo(
-                    fen TEXT NOT NULL,
-                    fmn INTEGER NOT NULL, -- fullmove number
-                    PRIMARY KEY (fen, fmn)
-                    ) WITHOUT ROWID;
-                """
-        with self.db as conn:
-            for stt in script.split(";"):
-                conn.execute(stt)
-
-        self._board = Board()
-
-    def close(self) -> None:
-        self.db.close()
-
-    def insert(self, move_stack: list[str]):
-        stt = "INSERT OR IGNORE INTO todo (fen, fmn) VALUES (?, ?)"
-
-        try:
-            with self.db as conn:
-                for move in move_stack:
-                    self._board.push_san(move)
-                    conn.execute(stt, (self._board.fen(), self._board.fullmove_number))
-        except:
-            print(move_stack)
-            raise
-        self._board.reset()
-
-    def random(self, limit: int = 1) -> list[str]:
-        # TODO: ini menyedihkan karena kita tidak dapat mengoptimalkan
-        # hash table (posisi yang diambil acak).
-        assert isinstance(limit, int)
-        results = self.db.execute(
-            f"SELECT fen FROM todo ORDER BY fmn ASC, RANDOM() LIMIT {limit}"
-        ).fetchall()
-        return [_["fen"] for _ in results]
-
-    def delete(self, fen: str):
-        with self.db as conn:
-            conn.execute("DELETE FROM todo WHERE fen=?", (fen,))
-
-    def pop(self, board: Board | None = None) -> str | None:
-        results = self.random()
-        if not results:
-            return None
-        fen = results[0]
-        self.delete(fen)
-        return fen
+MP = 2
+DUMP_DIR = "./dump"
+path_to = lambda fname: os.path.join(DUMP_DIR, fname)
 
 
-def stdin_to_todo(db: Todo):
-    # https://gist.github.com/martinth/ed991fb8cdcac3dfadf7
-    for line in tqdm(fileinput.input(files=("-",)), ncols=0):
+def _process(db, fname):
+    with log_traceback(), fileinput.input(files=(fname,)) as f:
+        for line in f:
+            raw = loads(line)
 
-        # pastikan permainan dimulai dari awal
-        if line[:3] == "1. ":
-            # tidak menggunakan chess.pgn.read_game, karena kita cuma butuh
-            # mainline move. Cara 'manual' ini mempercepat dari 7k iter/s
-            # menjadi 21.5k iter/s.
-            moves = RE_PGN_NON_MOVE.sub("", line).split()
-            moves = moves[: min(len(moves) - 1, 2 * MAX_FULLMOVE)]
-            db.insert(moves)
+            for eval in raw["evals"]:
+                data = []
+
+                # tambahkan data eval
+                for pv in eval["pvs"]:
+                    if "cp" in pv:
+                        score = pv["cp"]
+                    else:
+                        value = pv["mate"]
+                        if value > 0:
+                            score = MATE_SCORE - value
+                        else:
+                            score = -MATE_SCORE - value
+                    data.append(
+                        {
+                            "fen": raw["fen"],
+                            "depth": eval["depth"],
+                            "score": score,
+                            "pv": pv["line"].split(" "),
+                        }
+                    )
+
+                # urutkan untuk dapat multipv; upsert
+                data.sort(key=lambda d: d["score"], reverse=True)
+                for i, info in enumerate(data, start=1):
+                    info["multipv"] = i
+                    try:
+                        db.upsert(info["fen"], info)
+                    except IllegalMoveError:
+                        # analisa ini bukan catur standar
+                        continue
 
 
-def process_todo(db: Todo, engine: AnalysisEngine):
-    while True:
-        fen = db.pop()
-        if fen is None:
-            break
+def process(args):
+    db_part, fname = args
 
-        info = engine.info(fen)
-        if info and info[0]["depth"] >= MINIMAL_DEPTH:
-            continue
+    fname = path_to(fname)
+    db_path = f"lichess.sqlite.part{db_part}" 
 
-        engine.start(fen, depth=MINIMAL_DEPTH)
-        sleep(1)
-        while not engine._stop:
-            sleep(0.5)
-        # os.system("clear")
-        print(fen)
+    db = Database(db_path)
+    try:
+        db.sql.execute("ANALYZE")
+        _process(db, fname)
+        db.sql.execute("VACUUM")
+        os.remove(fname)
+    except:
+        print(f"FAIL {fname}")
+        raise
+    else:
+        print(f"DONE {fname}")
+    finally:
+        db.close()
+    return fname
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog="Importer",
-        description="Mengumpulkan posisi catur yang perlu dianalisa",
-    )
-    parser.add_argument(
-        "-a",
-        "--add-first",
-        action="store_true",
-        help="Tambah posisi dari dump Lichess untuk dianalisa",
-    )
-    args = parser.parse_args()
+    filenames = os.listdir(DUMP_DIR)
+    shuffle(filenames)
 
-    db = Todo()
-    engine = None
-    try:
-        if args.add_first:
-            print("collecting...")
-            stdin_to_todo(db)
-
-        print("starting engine...")
-        engine = AnalysisEngine(
-            engine_path="engine/stockfish",
-            database_path="data.sqlite",
-            configs={
-                "EvalFile": "engine/nn-1c0000000000.nnue",
-                "Threads": 4,
-                # "Hash": 1024,
-            },
-        )
-
-        print("analyzing...")
-        process_todo(db, engine)
-
-    except KeyboardInterrupt:
-        print("\ninterrupted!")
-
-    finally:
-        print("shutting down")
-        db.db.execute("VACUUM")
-        db.close()
-        if engine:
-            # just-in-case Ctrl+C saat collecting
-            engine.shutdown()
+    args = zip(cycle(range(1, 10)), filenames)
+    with Pool(processes=MP) as pool:
+        for _ in pool.imap_unordered(process, args, chunksize=2):
+            pass
