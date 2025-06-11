@@ -319,7 +319,6 @@ class Database:
                 PRAGMA synchronous = off;
                 PRAGMA temp_store = memory;
                 PRAGMA mmap_size = 30000000000;
-                PRAGMA cache_size = -4096000;
                 PRAGMA busy_timeout = 10000;
 
                 PRAGMA wal_autocheckpoint;
@@ -333,6 +332,8 @@ class Database:
                     PRIMARY KEY (fen, multipv)
                     ) WITHOUT ROWID;
                 """
+        # PRAGMA cache_size = -4096000;
+
         # https://stackoverflow.com/questions/15856976/transactions-with-python-sqlite3
         # sederhananya, jangan pakai executescript()
         with self.sql as conn:

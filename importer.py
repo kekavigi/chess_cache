@@ -11,9 +11,19 @@ from tqdm import tqdm
 from chess_cache import MATE_SCORE, Database
 from logg import log_traceback
 
-MP = 3
+MP = 2
 DUMP_DIR = "./dump"
 path_to = lambda fname: os.path.join(DUMP_DIR, fname)
+
+IMPORT_STT = """
+    INSERT INTO master.board AS mas
+    SELECT * FROM board AS mem WHERE TRUE
+    ON CONFLICT (fen, multipv) DO UPDATE SET
+        depth = excluded.depth,
+        score = excluded.score,
+        move  = excluded.move
+    WHERE excluded.depth >= mas.depth
+"""
 
 
 def _process(db, fname):
@@ -55,17 +65,15 @@ def _process(db, fname):
 
 
 def process(args):
-    db_part, fname = args
-
+    db_name, fname = args
     fname = path_to(fname)
-    db_path = f"lichess.sqlite.part{db_part}"
 
-    db = Database(db_path)
+    db = Database(":memory:")
     try:
-        db.sql.execute("ANALYZE")
-        db.sql.execute("PRAGMA optimize")
         _process(db, fname)
-        db.sql.execute("VACUUM")
+        db.sql.execute(f"ATTACH DATABASE '{db_name}' AS master")
+        db.sql.execute(IMPORT_STT)
+        db.sql.execute("DETACH master")
         os.remove(fname)
     except:
         print(f"FAIL {fname}")
@@ -76,10 +84,16 @@ def process(args):
 
 
 if __name__ == "__main__":
+    db_names = [
+        "lichess.sqlite",
+        "lichess.sqlite.part1",
+        "lichess.sqlite.part2",
+        "lichess.sqlite.part3",
+    ][:MP]
     filenames = os.listdir(DUMP_DIR)
-    shuffle(filenames)
+    # shuffle(filenames)
 
-    args = zip(cycle(range(1, 10)), filenames)
+    args = zip(cycle(db_names), filenames)
     with Pool(processes=MP) as pool:
         for _ in tqdm(
             pool.imap_unordered(process, args),
