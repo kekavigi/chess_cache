@@ -316,9 +316,10 @@ class Database:
         self.sql.row_factory = dict_factory
         script = """
                 PRAGMA journal_mode = wal;
-                PRAGMA synchronous = normal;
+                PRAGMA synchronous = off;
                 PRAGMA temp_store = memory;
                 PRAGMA mmap_size = 30000000000;
+                PRAGMA cache_size = -4096000;
                 PRAGMA busy_timeout = 10000;
 
                 PRAGMA wal_autocheckpoint;

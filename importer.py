@@ -6,11 +6,12 @@ from random import shuffle
 
 from chess import IllegalMoveError
 from orjson import loads
+from tqdm import tqdm
 
 from chess_cache import MATE_SCORE, Database
 from logg import log_traceback
 
-MP = 2
+MP = 3
 DUMP_DIR = "./dump"
 path_to = lambda fname: os.path.join(DUMP_DIR, fname)
 
@@ -57,19 +58,18 @@ def process(args):
     db_part, fname = args
 
     fname = path_to(fname)
-    db_path = f"lichess.sqlite.part{db_part}" 
+    db_path = f"lichess.sqlite.part{db_part}"
 
     db = Database(db_path)
     try:
         db.sql.execute("ANALYZE")
+        db.sql.execute("PRAGMA optimize")
         _process(db, fname)
         db.sql.execute("VACUUM")
         os.remove(fname)
     except:
         print(f"FAIL {fname}")
         raise
-    else:
-        print(f"DONE {fname}")
     finally:
         db.close()
     return fname
@@ -81,5 +81,12 @@ if __name__ == "__main__":
 
     args = zip(cycle(range(1, 10)), filenames)
     with Pool(processes=MP) as pool:
-        for _ in pool.imap_unordered(process, args, chunksize=2):
+        for _ in tqdm(
+            pool.imap_unordered(process, args),
+            total=len(filenames),
+            ncols=0,
+        ):
             pass
+
+    # db_part, fname = 1, filenames[0]
+    # process((db_part, fname))
