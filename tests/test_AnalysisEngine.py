@@ -116,21 +116,23 @@ def test_batch_analysis(ae_file_empty):
 def test_insane_config(ae_file_empty):
     engine = ae_file_empty
     fen = Board().fen()
-    engine.start(fen, depth=10, config={'MultiPV': 20})
+    engine.start(fen, depth=10, config={"MultiPV": 20})
     engine.wait()
 
     result = engine.info(fen, multipv=20)
     assert len(result) == 20
     assert result[0]["depth"] == 10
 
+
 def test_insane_config2(ae_file_full):
     engine = ae_file_full
     fen = Board().fen()
-    engine.start(fen, depth=10, config={'MultiPV': 20})
+    engine.start(fen, depth=10, config={"MultiPV": 20})
     engine.wait()
 
     result = engine.info(fen, multipv=20)
     assert len(result) == 20
+
 
 # TODO: test kasus checkmate
 # TODO: dengan create_copy_ae, check true_multipv

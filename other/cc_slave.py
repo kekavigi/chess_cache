@@ -23,20 +23,20 @@ def main():
 
     while True:
         # get task
-        print('requesting...')
+        print("requesting...")
         req = requests.get(URL)
         data = req.json()
         if not data or not data["fens"]:
             break  # nothing to do
 
-        print('solving...')
+        print("solving...")
         engine.start(data["fens"], depth=data["depth"], config=data["config"])
         engine.wait(delta=3)
 
         results = engine.db.to_json()
         engine.db.reset_db()
 
-        print('uploading...')
+        print("uploading...")
         req = requests.post(URL, json={"auth": AUTH_TOKEN, "data": results})
         if req.status_code != 200:
             raise ConnectionRefusedError("something went wrong.")
