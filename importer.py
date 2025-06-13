@@ -1,12 +1,11 @@
 import fileinput
 import os
-from itertools import cycle
+from itertools import cycle, batched
 from multiprocessing import Pool
 from random import shuffle
 
 from chess import IllegalMoveError
-from orjson import loads
-from tqdm import tqdm
+from json import loads
 
 from chess_cache import MATE_SCORE, Database
 from logg import log_traceback
@@ -65,18 +64,31 @@ def _process(db, fname):
 
 
 def process(args):
-    db_name, fname = args
-    fname = path_to(fname)
+    db_name, filenames = args
+
+    if 'fish.exit' in os.listdir():
+        return
 
     db = Database(":memory:")
     try:
-        _process(db, fname)
+        _len = len(filenames)
+        for e, fname in enumerate(filenames, start=1):
+            print(f'starting ({e}/{_len}) {fname}')
+            _process(db, fname)
+
+        print('start joining')
         db.sql.execute(f"ATTACH DATABASE '{db_name}' AS master")
         db.sql.execute(IMPORT_STT)
         db.sql.execute("DETACH master")
-        os.remove(fname)
+
+        print('start deleting')
+        for fname in filenames:
+            os.remove(fname)
+
+        print('done')
+
     except:
-        print(f"FAIL {fname}")
+        print(f"FAIL {filenames}")
         raise
     finally:
         db.close()
@@ -90,17 +102,13 @@ if __name__ == "__main__":
         "lichess.sqlite.part2",
         "lichess.sqlite.part3",
     ][:MP]
-    filenames = os.listdir(DUMP_DIR)
-    # shuffle(filenames)
+    filenames = [path_to(_) for _ in os.listdir(DUMP_DIR)]
+    shuffle(filenames)
 
-    args = zip(cycle(db_names), filenames)
+    args = zip(cycle(db_names), batched(filenames, 100))
     with Pool(processes=MP) as pool:
-        for _ in tqdm(
-            pool.imap_unordered(process, args),
-            total=len(filenames),
-            ncols=0,
-        ):
+        for _ in pool.imap_unordered(process, args):
             pass
 
-    # db_part, fname = 1, filenames[0]
-    # process((db_part, fname))
+    # db_name, fname = db_names[0], filenames[0]
+    # process((db_name, (fname,)))
