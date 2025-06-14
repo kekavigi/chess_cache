@@ -714,7 +714,7 @@ class AnalysisEngine:
             self._thread.join(timeout)
         self._stop = False
 
-    def wait(self, delta: float = 1):
+    def wait(self, delta: float = 1) -> None:
         while not self._stop:
             sleep(delta)
 
