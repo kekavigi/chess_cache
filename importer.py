@@ -1,11 +1,11 @@
 import fileinput
 import os
-from itertools import cycle, batched
+from itertools import batched, cycle
+from json import loads
 from multiprocessing import Pool
 from random import shuffle
 
 from chess import IllegalMoveError
-from json import loads
 
 from chess_cache import MATE_SCORE, Database
 from logg import log_traceback
@@ -58,7 +58,7 @@ def _process(db, fname):
                     info["multipv"] = i
                     try:
                         db.upsert(info["fen"], info)
-                    except IllegalMoveError:
+                    except (IllegalMoveError, KeyError):
                         # analisa ini bukan catur standar
                         continue
 
@@ -66,26 +66,26 @@ def _process(db, fname):
 def process(args):
     db_name, filenames = args
 
-    if 'fish.exit' in os.listdir():
+    if "fish.exit" in os.listdir():
         return
 
     db = Database(":memory:")
     try:
         _len = len(filenames)
         for e, fname in enumerate(filenames, start=1):
-            print(f'starting ({e}/{_len}) {fname}')
+            print(f"starting ({e}/{_len}) {fname}")
             _process(db, fname)
 
-        print('start joining')
+        print("start joining")
         db.sql.execute(f"ATTACH DATABASE '{db_name}' AS master")
         db.sql.execute(IMPORT_STT)
         db.sql.execute("DETACH master")
 
-        print('start deleting')
+        print("start deleting")
         for fname in filenames:
             os.remove(fname)
 
-        print('done')
+        print("done")
 
     except:
         print(f"FAIL {filenames}")
