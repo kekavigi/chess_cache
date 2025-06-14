@@ -4,13 +4,18 @@ Ini adalah proyek saya menggabungkan mesin catur seperti Stockfish, dengan datab
 
 Beberapa hal yang ingin dikembangkan:
 * Unit test yang lebih banyak.
-* Menggabungkan dua atau lebih database singgahan. Jika nama dan versi mesin catur yang digunakan sama (misal `Stockfish 17.1`), Ini seharusnya mudah: pilih `(multipv, fen)` dengan `depth` tertinggi di semua database (jika ada), untuk semua `(multipv, fen)`.
-* Membuat antarmuka untuk melihat isi database singgahan dan mengelolanya (menjalankan `VACUUM`, menganalisis posisi secara manual, dsb.).
-* Mengimport analisa dari Lichess.
+* Menggabungkan dua atau lebih database singgahan.
+	* Jika nama mesin catur yang digunakan sama (misal `Stockfish`), dan satu database *strictly* berisi analisa oleh versi mesin yang lebih tinggi (sebut database ini sebagai *incoming*), ini seharusnya mudah: `INSERT INTO master SELECT incoming ... ON CONFLICT UPDATE ... WHERE excluded.depth >= master.depth`.
+	* Jika hanya nama mesin catur yang sama? Jika nama mesin-mesin catur berbeda?
+* Membuat antarmuka untuk melihat isi database singgahan dan mengelolanya (menjalankan `VACUUM`, menganalisa posisi secara manual, dsb.).
 * Mengimport semua pgn game (suatu user atau semacamnya) dari Lichess/chess.com, untuk dianalisa.
-* Menghapus kolom `multipv` dari table database, tanpa membuat peforma menjadi lebih buruk.
+* Menghapus kolom `multipv` dari table database, tanpa membuat peforma `UciEngine` menjadi lebih buruk.
+
+# Fossil
+
+Jika Anda membaca ini di Github/Gitlab, Anda sebenarnya membaca *mirror* dari repo [Fossil](https://fossil-scm.org/) *self-hosted* di laptop saya. Saya menggunakan Fossil karena mengamati SCM ini lebih sesuai dengan kebutuhan saya, sekaligus karena ingin mempelajari SCM selain Git. Saya tidak (minimalnya, belum) dapat menerima kontribusi berupa kode, karena sifat proyek ini yang "*just for fun*", dan karena ada beberapa hal yang ingin saya coba buat/kembangkan. Anda dapat mem-*fork* repo ini, itu yang pasti.
 
 ## Usaha terkait
 
+* [lichess.org open database](https://database.lichess.org/). Database exports are released under the Creative Commons CC0 license. Use them for research, commercial purpose, publication, anything you like. You can download, modify and redistribute them, without asking for permission. 247,858,650 chess positions evaluated with Stockfish. Produced by, and for, the Lichess analysis board, running various flavours of Stockfish within user browsers.
 * [github.com/r2dev2/ChessData](https://github.com/r2dev2/ChessData). *This is an in progress dataset which contains millions of positions with stockfish evaluations. Please help contribute evaluations of the positions to the repo. So far, we have 12958035 evaluations.* Di [dataset Kaggle terkait](https://www.kaggle.com/datasets/ronakbadhe/chess-evaluations), "This is the file which contains the positions and evaluations. The positions are given in FEN form and the evaluations are in centi-pawns and are generated from Stockfish 11 at depth 22.".
-
