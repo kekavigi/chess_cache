@@ -27,6 +27,7 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 
 # Spesifikasi protokol UCI: https://wbec-ridderkerk.nl/html/UCIProtocol.html
 
+import logging
 import sqlite3
 import sys
 from base64 import b85decode, b85encode
@@ -39,9 +40,9 @@ from threading import Thread
 from time import sleep
 from typing import Any
 
-from chess import Board
+from chess import Board, IllegalMoveError
 
-from logg import log_traceback
+from logg import JSONFormatter
 
 # TODO: tidak usah gunakan module chess, kita kurang lebih hanya butuh atribut
 # berikut: fen, set_fen, push_uci, dan copy. Ide, buat representasi papan
@@ -52,7 +53,19 @@ from logg import log_traceback
 # saya tidak tahu cara mengatasinya. Kode berikut akan mensuppress pesan tersebut
 # https://stackoverflow.com/questions/16314321/suppressing-printout-of-exception-ignored-message-in-python-3
 # https://stackoverflow.com/questions/24169893/how-to-prevent-exception-ignored-in-module-threading-from-while-settin
-sys.unraisablehook = lambda unraisable: None
+# sys.unraisablehook = lambda unraisable: None
+
+_handle_db = logging.FileHandler("logs/database.jsonl")
+_handle_db.setFormatter(JSONFormatter())
+logger_db = logging.Logger("database")
+logger_db.addHandler(_handle_db)
+
+_handle_engine = logging.FileHandler("logs/engine.jsonl")
+_handle_engine.setFormatter(JSONFormatter())
+logger_engine = logging.Logger("engine")
+logger_engine.addHandler(_handle_engine)
+logger_engine.setLevel(logging.WARNING)
+
 
 Info = dict[str, Any]
 Config = dict[str, str | int]
@@ -428,37 +441,43 @@ class Database:
         # info_ akan digunakan sebagai "taksiran" hasil analisis mesin catur
         # untuk semua move di info['pv'], dengan beberapa penyesuaian
 
-        with self.sql as conn:
-            for num, move in enumerate(info_["pv"]):
+        try:
+            with self.sql as conn:
+                for num, move in enumerate(info_["pv"]):
 
-                # loop sampai nol
-                if info_["depth"] == 0:
-                    break
+                    # loop sampai nol
+                    if info_["depth"] == 0:
+                        break
 
-                fen = board.fen()
+                    fen = board.fen()
 
-                # bandingkan dengan hasil singgahan
-                old_info = self.select(fen, info_["multipv"])
-                if old_info and old_info["depth"] > info_["depth"]:
-                    # hentikan menyinggah karena posisi ini pernah dianalisis
-                    # dan depthnya lebih besar daripada depth hasil taksiran
-                    break
-                elif old_info and old_info["depth"] == info_["depth"] and num != 0:
-                    # hentikan menyinggah karena posisi ini pernah dianalisis
-                    # walau depthnya sama, posisi ini lebih baik karena yang
-                    # kita miliki hanyalah taksiran/ekstrapolasi
-                    break
+                    # bandingkan dengan hasil singgahan
+                    old_info = self.select(fen, info_["multipv"])
+                    if old_info and old_info["depth"] > info_["depth"]:
+                        # hentikan menyinggah karena posisi ini pernah dianalisis
+                        # dan depthnya lebih besar daripada depth hasil taksiran
+                        break
+                    elif old_info and old_info["depth"] == info_["depth"] and num != 0:
+                        # hentikan menyinggah karena posisi ini pernah dianalisis
+                        # walau depthnya sama, posisi ini lebih baik karena yang
+                        # kita miliki hanyalah taksiran/ekstrapolasi
+                        break
 
-                # untuk iterasi pertama; induk
-                info_["fen"] = encode_fen(fen)
-                info_["move"] = UCI_TO_NUM[move]
-                conn.execute(stt, info_)
+                    # untuk iterasi pertama; induk
+                    info_["fen"] = encode_fen(fen)
+                    info_["move"] = UCI_TO_NUM[move]
+                    conn.execute(stt, info_)
 
-                # untuk semua iterasi berikutnya; keturunannya
-                board.push_uci(move)
-                info_["multipv"] = 1  # walau multipv induk mungkin !=1
-                info_["score"] *= -1  # ubah sudut pandang score
-                info_["depth"] -= 1  # kurangi depth
+                    # untuk semua iterasi berikutnya; keturunannya
+                    board.push_uci(move)
+                    info_["multipv"] = 1  # walau multipv induk mungkin !=1
+                    info_["score"] *= -1  # ubah sudut pandang score
+                    info_["depth"] -= 1  # kurangi depth
+
+        except (IllegalMoveError, KeyError):
+            logger_db.exception("Bukan permainan catur standar")
+            raise
+
         return
 
     def to_json(self) -> list[Info]:
@@ -535,13 +554,16 @@ class UciEngine:
         thread.start()
 
         try:
+            logger_engine.info('Interaction started')
             self.parse_input()
         except:
             self._quit = True
         finally:
             self.engine.terminate()
+            logger_engine.info('Interaction closed')
             self.db.close()
             thread.join()
+            logger_engine.info('Engine closed')
 
     def parse_input(self) -> None:
         "Memroses input pengguna agar hasil dari mesin catur dapat disinggah."
@@ -551,6 +573,8 @@ class UciEngine:
 
         while True:
             command = input().strip()
+            logger_engine.info('', extra={"stdin": command})
+
             if command == "quit":
                 self._quit = True
                 break
@@ -599,11 +623,12 @@ class UciEngine:
         # stdin dari stockfish masih refer to old position? atau itu
         # pratically tidak akan terjadi?
 
-        with log_traceback():
+        try:
             while not self._quit:
                 text = std_read().strip()
                 if text == "":
                     continue
+                logger_engine.info('stdout: %s', text)
 
                 cached: Info | None
 
@@ -639,6 +664,9 @@ class UciEngine:
                         text = f"bestmove {cached['pv'][0]}"
 
                 print(text, flush=True)
+        except:
+            logger_engine.exception("Something went wrong.")
+            raise
 
 
 class AnalysisEngine:
@@ -741,46 +769,48 @@ class AnalysisEngine:
 
         def process() -> None:
             try:
-                with log_traceback():
-                    self._set_options(config)
+                self._set_options(config)
 
-                    for fen in fens:
-                        self._std_write(f"position fen {fen}\n")
+                for fen in fens:
+                    self._std_write(f"position fen {fen}\n")
 
-                        # "flush" sampai dapat `readyok`
-                        _ = ""
-                        self._std_write("isready\n")
-                        while _ != "readyok" and not self._stop:
-                            _ = self._std_read().strip()
+                    # "flush" sampai dapat `readyok`
+                    _ = ""
+                    self._std_write("isready\n")
+                    while _ != "readyok" and not self._stop:
+                        _ = self._std_read().strip()
 
-                        if depth is not None and depth > 0:
-                            self._std_write(f"go depth {depth}\n")
-                        else:
-                            self._std_write("go infinite\n")
+                    if depth is not None and depth > 0:
+                        self._std_write(f"go depth {depth}\n")
+                    else:
+                        self._std_write("go infinite\n")
 
-                        # proses output dari engine
-                        while True:
-                            if self._stop:
-                                self._std_write("stop\n")
+                    # proses output dari engine
+                    while True:
+                        if self._stop:
+                            self._std_write("stop\n")
 
-                            text = self._std_read().strip()
-                            if "bestmove" in text:
-                                break
-                            if (
-                                ("score" not in text)
-                                or ("pv" not in text)
-                                or ("bound" in text)
-                                or text[:4] != "info"
-                            ):
-                                continue
+                        text = self._std_read().strip()
+                        if "bestmove" in text:
+                            break
+                        if (
+                            ("score" not in text)
+                            or ("pv" not in text)
+                            or ("bound" in text)
+                            or text[:4] != "info"
+                        ):
+                            continue
 
-                            info = _parse_uci_info(text)
-                            self.db.upsert(fen, info)
+                        info = _parse_uci_info(text)
+                        self.db.upsert(fen, info)
 
-                    # untuk thread lain tahu bahwa proses sudah berhenti
-                    self._stop = True
+                # untuk thread lain tahu bahwa proses sudah berhenti
+                self._stop = True
             except BrokenPipeError:
                 pass
+            except:
+                logger_engine.exception("Something went wrong.")
+                raise
 
         self._thread = Thread(target=process)
         self._thread.daemon = True
