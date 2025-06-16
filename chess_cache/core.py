@@ -409,6 +409,7 @@ class Database:
                 # TODO: database bermasalah, tapi dengan mengabaikannya
                 # akan heal sendiri, kenapa? apakah iya memang heal?
                 # race condition dengan upsert di UciEngine.parse_output?
+                logger_db.warning("Something fishy happening", exc_info=True)
                 pass
 
         return info
@@ -478,9 +479,12 @@ class Database:
             # rangkaian gerakan catur standar. Jadi analisa ini
             # bukan posisi standar, sehingga tidak usah di upsert
 
-            msg = "Data tidak sahih atau bukan permainan catur standar"
-            logger_db.exception(msg, info)
-            raise ValueError(msg)
+            # TODO: buat custom error
+            raise ValueError("Data tidak sahih atau bukan permainan catur standar")
+
+        except:
+            logger_db.exception("Something went wrong.", extra={"extra": info_})
+            raise
 
         return
 

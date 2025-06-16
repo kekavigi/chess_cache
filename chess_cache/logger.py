@@ -11,8 +11,8 @@ class JSONFormatter(logging.Formatter):
 
     # https://gist.github.com/kdgregory/82cc3942311c1983a9e141a8ced1f5fd
 
-    def __init__(self, **extra: Any):
-        self.extra = extra
+    def __init__(self, **tags: Any):
+        self.tags = tags
 
     @no_type_check
     def format(self, record: logging.LogRecord):
@@ -25,10 +25,11 @@ class JSONFormatter(logging.Formatter):
             "processId": record.process,
             "thread": record.threadName,
             "locationInfo": {"fileName": record.filename, "lineNumber": record.lineno},
+            "extra": record.__dict__.get('extra', None),
         }
 
-        if self.extra:
-            result["extra"] = self.extra
+        if self.tags:
+            result["tags"] = self.tags
         if record.exc_info:
             exc_type, exc_value, exc_traceback = record.exc_info
             result["exception"] = exc_type.__name__

@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # speed tetap menjadi bottleneck, karena kita dapat menalar perintah SQL
     # IMPORT_STT akan *jauh* lebih banyak melakukan INSERT ketimbang UPDATE
     # (signifikan terasa saat ukuran berkas database sudah dua digit gigabita).
-    args = zip(cycle(db_names), batched(filenames, 1))
+    args = zip(cycle(db_names), batched(filenames, 250))
     with Pool(processes=MP) as pool:
         for _ in pool.imap_unordered(process, args):
             pass
