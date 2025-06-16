@@ -14,7 +14,7 @@ from rich.prompt import InvalidResponse, PromptBase, PromptType
 from rich.table import Table
 from rich.text import Text
 
-from chess_cache import AnalysisEngine, Info
+from chess_cache.core import AnalysisEngine, Info
 
 RE_COLORIZE = re.compile(r"([kqrnbp])")
 PROG_CHOICE = ["", "SPOIL", "UNDO"]
