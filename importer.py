@@ -9,8 +9,8 @@ from itertools import batched, cycle
 from json import loads
 from multiprocessing import Pool
 
-from chess_cache import MATE_SCORE, Database
-from logg import JSONFormatter
+from chess_cache.core import MATE_SCORE, Database
+from chess_cache.logger import JSONFormatter
 
 MP = 2  # banyak multiprocess
 DUMP_DIR = "./dump"
@@ -31,7 +31,9 @@ _handle_file.setFormatter(JSONFormatter())
 _handle_file.setLevel(logging.ERROR)
 
 _handle_io = logging.StreamHandler()
-_handle_io.setFormatter(logging.Formatter("\x1b[32m%(asctime)s\x1b[0m [%(process)s] %(message)s"))
+_handle_io.setFormatter(
+    logging.Formatter("\x1b[32m%(asctime)s\x1b[0m [%(process)s] %(message)s")
+)
 
 logger_imp = logging.Logger("importer")
 logger_imp.addHandler(_handle_file)
@@ -106,7 +108,7 @@ def process(args) -> None:
         logger_imp.info("process done")
 
     except:
-        logger_imp.exception(f"processing failed")
+        logger_imp.exception("processing failed")
         raise
     finally:
         db.close()
@@ -131,7 +133,7 @@ if __name__ == "__main__":
     # speed tetap menjadi bottleneck, karena kita dapat menalar perintah SQL
     # IMPORT_STT akan *jauh* lebih banyak melakukan INSERT ketimbang UPDATE
     # (signifikan terasa saat ukuran berkas database sudah dua digit gigabita).
-    args = zip(cycle(db_names), batched(filenames, 250))
+    args = zip(cycle(db_names), batched(filenames, 1))
     with Pool(processes=MP) as pool:
         for _ in pool.imap_unordered(process, args):
             pass

@@ -5,7 +5,7 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache import AnalysisEngine
+from chess_cache.core import AnalysisEngine
 
 
 def create_engine(database_path: str) -> AnalysisEngine:

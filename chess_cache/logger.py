@@ -5,6 +5,7 @@ from typing import Any, no_type_check
 
 # TODO: turn off logging when testing
 
+
 class JSONFormatter(logging.Formatter):
     "A formatter for the standard logging module that converts a LogRecord into JSON"
 

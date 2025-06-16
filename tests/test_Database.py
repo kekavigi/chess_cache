@@ -5,7 +5,7 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache import Database
+from chess_cache.core import Database
 
 
 @pytest.fixture
