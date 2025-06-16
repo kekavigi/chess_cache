@@ -475,8 +475,13 @@ class Database:
                     info_["depth"] -= 1  # kurangi depth
 
         except (IllegalMoveError, KeyError):
-            logger_db.exception("Bukan permainan catur standar")
-            raise
+            # aman untuk mengasumsikan daftar move di pv bukan
+            # rangkaian gerakan catur standar. Jadi analisa ini
+            # bukan posisi standar, sehingga tidak usah di upsert
+
+            msg = "Data tidak sahih atau bukan permainan catur standar"
+            logger_db.exception(msg)
+            raise ValueError(msg)
 
         return
 

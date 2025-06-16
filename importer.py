@@ -3,21 +3,17 @@ Mengubah dump analisa Lichess menjadi database SQLite
 """
 
 import fileinput
+import logging
 import os
 from itertools import batched, cycle
 from json import loads
 from multiprocessing import Pool
-from random import shuffle
-
-from chess import IllegalMoveError
 
 from chess_cache import MATE_SCORE, Database
-from logg import log_traceback
+from logg import JSONFormatter
 
 MP = 2  # banyak multiprocess
 DUMP_DIR = "./dump"
-path_to = lambda fname: os.path.join(DUMP_DIR, fname)
-
 IMPORT_STT = """
     INSERT INTO master.board AS mas
     SELECT * FROM board AS mem WHERE TRUE
@@ -28,12 +24,40 @@ IMPORT_STT = """
     WHERE excluded.depth >= mas.depth
 """
 
+path_to = lambda fname: os.path.join(DUMP_DIR, fname)
 
-def _process(db: Database, fname: str) -> None:
-    "Memparse berkas JSONL Lichess dan menyimpannya ke database."
+_handle_file = logging.FileHandler("logs/importer.jsonl")
+_handle_file.setFormatter(JSONFormatter())
+_handle_file.setLevel(logging.ERROR)
 
-    with log_traceback(), fileinput.input(files=(fname,)) as f:
-        for line in f:
+_handle_io = logging.StreamHandler()
+_handle_io.setFormatter(logging.Formatter("\x1b[32m%(asctime)s\x1b[0m [%(process)s] %(message)s"))
+
+logger_imp = logging.Logger("importer")
+logger_imp.addHandler(_handle_file)
+logger_imp.addHandler(_handle_io)
+
+
+def process(args) -> None:
+    db_name, filenames = args
+
+    # meniru fishtest-nya Stockfish: tidak melakukan proses import
+    # jika ada berkas `fish.exit` di working dir. Lebih baik daripada
+    # user mengirim KeyboardInterrupt saat program berjalan
+    if "fish.exit" in os.listdir():
+        return
+
+    # gunakan memory untuk menyimpan sementara hasil import analisa catur.
+    # Cara ini jauh lebih cepat karena UPSERT terjadi di RAM bukan di SSD,
+    # dan tanpa peningkatan berarti pada penggunaan RAM
+    db = Database(":memory:")
+    try:
+
+        # dump Lichess di-praproses dengan `zstdcat dump.jsonl.zstd | split`
+        # Dari observasi didapati kita dapat memroses banyak berkas hasil
+        # split tanpa peningkatan berarti pada penggunaan RAM
+        logger_imp.info("reading dumps")
+        for line in fileinput.input(files=filenames):
             raw = loads(line)
 
             for eval in raw["evals"]:
@@ -64,51 +88,25 @@ def _process(db: Database, fname: str) -> None:
                     info["multipv"] = i
                     try:
                         db.upsert(info["fen"], info)
-                    except (IllegalMoveError, KeyError):
-                        # aman untuk mengasumsikan daftar move di pv bukan
-                        # rangkaian gerakan catur standar. Jadi analisa ini
-                        # bukan posisi standar, sehingga tidak usah di upsert
+                    except ValueError:
+                        # bukan analisa posisi catur standar
                         continue
 
-
-def process(args) -> None:
-    db_name, filenames = args
-
-    # meniru fishtest-nya Stockfish: tidak melakukan proses import
-    # jika ada berkas `fish.exit` di working dir. Lebih baik daripada
-    # user mengirim KeyboardInterrupt saat program berjalan
-    if "fish.exit" in os.listdir():
-        return
-
-    # gunakan memory untuk menyimpan sementara hasil import analisa catur.
-    # Cara ini jauh lebih cepat karena UPSERT terjadi di RAM bukan di SSD,
-    # dan tanpa peningkatan berarti pada penggunaan RAM
-    db = Database(":memory:")
-    try:
-
-        # dump Lichess di-praproses dengan `zstdcat dump.jsonl.zstd | split`
-        # Dari observasi didapati kita dapat memroses banyak berkas hasil
-        # split tanpa peningkatan berarti pada penggunaan RAM
-        _len = len(filenames)
-        for e, fname in enumerate(filenames, start=1):
-            print(f"starting ({e}/{_len}) {fname}")
-            _process(db, fname)
-
         # UPSERT isi database :memory: dengan berkas database
-        print("start joining")
+        logger_imp.info("upserting database")
         db.sql.execute(f"ATTACH DATABASE '{db_name}' AS master")
         db.sql.execute(IMPORT_STT)
         db.sql.execute("DETACH master")
 
         # Delete setelah upsert berhasil
-        print("start deleting")
+        logger_imp.info("deleting dumps")
         for fname in filenames:
             os.remove(fname)
 
-        print("done")
+        logger_imp.info("process done")
 
     except:
-        print(f"FAIL {filenames}")
+        logger_imp.exception(f"processing failed")
         raise
     finally:
         db.close()
@@ -123,7 +121,9 @@ if __name__ == "__main__":
         "lichess.sqlite.part3",
     ][:MP]
     filenames = [path_to(_) for _ in os.listdir(DUMP_DIR)]
-    shuffle(filenames)  # opsional; selera pribadi
+
+    if "fish.exit" in os.listdir():
+        os.remove("fish.exit")
 
     # untuk mempercepat proses import, gunakan multiprocess. Untuk menghindari
     # write lock, simpan analisa ke berkas SQLite berbeda (nanti digabung).
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # speed tetap menjadi bottleneck, karena kita dapat menalar perintah SQL
     # IMPORT_STT akan *jauh* lebih banyak melakukan INSERT ketimbang UPDATE
     # (signifikan terasa saat ukuran berkas database sudah dua digit gigabita).
-    args = zip(cycle(db_names), batched(filenames, 100))
+    args = zip(cycle(db_names), batched(filenames, 250))
     with Pool(processes=MP) as pool:
         for _ in pool.imap_unordered(process, args):
             pass
