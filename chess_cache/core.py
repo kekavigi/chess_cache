@@ -32,6 +32,8 @@ import sqlite3
 from base64 import b85decode, b85encode
 from functools import lru_cache
 from itertools import product
+from os import F_OK, X_OK
+from os import access as os_access
 from re import compile as regex_compile
 from subprocess import PIPE, Popen
 from threading import Thread
@@ -544,9 +546,10 @@ class AnalysisEngine:
                 mesin catur.
         """
 
-        # TODO: try except engine exist
-
-        self.db = Database(database_path)
+        if not os_access(engine_path, F_OK):
+            raise FileNotFoundError("Engine tidak ditemukan.")
+        if not os_access(engine_path, X_OK):
+            raise PermissionError("Engine tidak executable.")
         self._engine = Popen(
             engine_path,
             stdin=PIPE,
@@ -555,6 +558,8 @@ class AnalysisEngine:
             bufsize=1,
         )
         self._thread: Thread | None = None
+
+        self.db = Database(database_path)
 
         assert self._engine.stdin is not None
         assert self._engine.stdout is not None
@@ -728,4 +733,5 @@ class AnalysisEngine:
 
         # self.stop()
         self.db.close()
-        self._engine.terminate()
+        if self._engine:
+            self._engine.terminate()
