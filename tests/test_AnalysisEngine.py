@@ -23,7 +23,7 @@ def create_engine(database_path: str) -> AnalysisEngine:
 @pytest.fixture
 def ae_file_empty(tmp_path):
     try:
-        engine = create_engine(f"{tmp_path}/test.sqlite")
+        engine = create_engine(f"file:///{tmp_path}/test.sqlite")
         yield engine
     except:
         raise
@@ -35,7 +35,7 @@ def ae_file_empty(tmp_path):
 def ae_file_full(tmp_path):
     try:
         copyfile("data.sqlite", f"{tmp_path}/test.sqlite")
-        engine = create_engine(f"{tmp_path}/test.sqlite")
+        engine = create_engine(f"file:///{tmp_path}/test.sqlite")
         yield engine
     except:
         raise

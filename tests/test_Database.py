@@ -5,14 +5,14 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache.core import Database
+from chess_cache.core import Database, STARTING_FEN
 
 
 @pytest.fixture
 def db_file(tmp_path):
     try:
         copyfile("data.sqlite", f"{tmp_path}/test.sqlite")
-        db = Database(f"{tmp_path}/test.sqlite")
+        db = Database(f"file:///{tmp_path}/test.sqlite")
         yield db
     except:
         raise
@@ -61,6 +61,18 @@ def test_sanity(db_file, db_memory_full):
     assert db_file._is_memory == False
     assert db_memory_full._is_memory == True
 
+def test_sanity2(db_memory_empty):
+    db = db_memory_empty
+    info = {
+        'multipv':1,
+        'depth':100,
+        'score':42,
+        'move':['d2d4', 'e7e5', 'h8h8']
+    }
+    with pytest.raises(ValueError):
+        db.upsert(STARTING_FEN, info)
+    result = db.sql.execute('SELECT COUNT(*) AS total FROM board').fetchone()
+    assert result['total'] == 0
 
 def test_to_json(db_memory_full):
     db = db_memory_full
@@ -96,3 +108,5 @@ def test_reset_db(db_file, db_memory_full):
     db_memory_full.reset_db()
     cur = db_memory_full.sql.execute("SELECT COUNT(*) AS total FROM board")
     assert cur.fetchone()["total"] == 0
+
+# TODO: simultaneous upsert from different thread

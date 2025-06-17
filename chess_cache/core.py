@@ -307,11 +307,11 @@ class Database:
         sembarang thread, dan tanpa BEGIN implisit. Akses langsung ke atribut
         `db` untuk tujuan _write_ disarankan menggunakan _with statement_.
 
-        Karena posisi catur yang disinggah banyak, database dibuat
-        sekecil mungkin dan hanya menyinggah informasi "fen", "multipv",
-        "depth", "score", dan "move". Tidak ada ROWID. PRIMARY KEY adalah
-        komposit nilai ("fen", "multipv"). Menggunakan mode jurnal WAL
-        dengan AUTOCHECKPOINT.
+        Table board akan otomatis dibuat jika tidak ada di database. Karena
+        posisi catur yang disinggah banyak, database dibuat sekecil mungkin
+        dan hanya menyinggah informasi "fen", "multipv", "depth", "score", 
+        dan "move". Tidak ada ROWID. PRIMARY KEY adalah komposit nilai
+        ("fen", "multipv"). Menggunakan mode jurnal WAL dengan AUTOCHECKPOINT.
 
         Kolom `fen` berisi posisi catur dalam notasi FEN yang terenkode.
         Kolom `move` berisi langkah bidak dalam notasi UCI yang terenkode.
@@ -326,7 +326,18 @@ class Database:
                 d[col[0]] = row[idx]
             return d
 
-        self.sql = sqlite3.connect(uri, check_same_thread=False, isolation_level=None)
+        if uri == ":memory:":
+            # https://sqlite.org/uri.html
+            # https://www.sqlite.org/c3ref/open.html
+            # https://docs.python.org/3/library/sqlite3.html#sqlite3-uri-tricks
+            uri = "file:mem?mode=memory&cache=private"
+        self.sql = sqlite3.connect(
+            uri,
+            uri=True,
+            autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,
+            isolation_level=None,
+            check_same_thread=False,
+        )
         self.sql.row_factory = dict_factory
         script = """
                 PRAGMA journal_mode = wal;
