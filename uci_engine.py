@@ -32,14 +32,22 @@ class UciEngine:
                 catur dan alamat dari berkas database SQLite.
         """
 
-        with open(settings_path) as f:
-            settings = load_json(f)
+        try:
+            with open(settings_path) as f:
+                settings = load_json(f)
+        except Exception:
+            logger_engine.warning('gagal membaca setting_path')
+            settings = {}
 
         engine_path = settings.get("engine_path")
         if not os_access(engine_path, F_OK):
-            raise FileNotFoundError("Engine tidak ditemukan.")
+            msg = 'Engine tidak ditemukan'
+            logger_engine.error(msg)
+            raise FileNotFoundError(msg)
         if not os_access(engine_path, X_OK):
-            raise PermissionError("Engine tidak executable.")
+            msg = "Engine tidak executable."
+            logger_engine.error(msg)
+            raise PermissionError(msg)
         self.engine = Popen(
             engine_path,
             stdin=PIPE,
