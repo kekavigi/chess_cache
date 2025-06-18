@@ -5,7 +5,7 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache.core import Database, STARTING_FEN
+from chess_cache.core import STARTING_FEN, Database
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def db_memory_empty():
 def db_memory_full(db_memory_empty):
     test_db = db_memory_empty
     stt = """
-        INSERT INTO board (fen, multipv, depth, score, move)
-        VALUES (:fen, :multipv, :depth, :score, :move)
+        INSERT INTO board (fen, depth, score, move)
+        VALUES (:fen, :depth, :score, :move)
     """
     try:
         true_db = Database("data.sqlite")
@@ -61,18 +61,15 @@ def test_sanity(db_file, db_memory_full):
     assert db_file._is_memory == False
     assert db_memory_full._is_memory == True
 
+
 def test_sanity2(db_memory_empty):
     db = db_memory_empty
-    info = {
-        'multipv':1,
-        'depth':100,
-        'score':42,
-        'move':['d2d4', 'e7e5', 'h8h8']
-    }
+    info = {"multipv": 1, "depth": 100, "score": 42, "move": ["d2d4", "e7e5", "h8h8"]}
     with pytest.raises(ValueError):
         db.upsert(STARTING_FEN, info)
-    result = db.sql.execute('SELECT COUNT(*) AS total FROM board').fetchone()
-    assert result['total'] == 0
+    result = db.sql.execute("SELECT COUNT(*) AS total FROM board").fetchone()
+    assert result["total"] == 0
+
 
 def test_to_json(db_memory_full):
     db = db_memory_full
@@ -108,5 +105,6 @@ def test_reset_db(db_file, db_memory_full):
     db_memory_full.reset_db()
     cur = db_memory_full.sql.execute("SELECT COUNT(*) AS total FROM board")
     assert cur.fetchone()["total"] == 0
+
 
 # TODO: simultaneous upsert from different thread

@@ -64,7 +64,7 @@ def test_cache_is_working(ae_file_empty):
     engine.start(fen, depth=10)
     engine.wait()
 
-    result = engine.info(fen)
+    result = engine.info(fen, only_best=True, max_depth=20)
     assert len(result) == 1
     assert result[0]["depth"] == 10
 
@@ -73,14 +73,14 @@ def test_cache_is_working(ae_file_empty):
     engine.start(fen, depth=5)
     engine.wait()
 
-    result = engine.info(fen)
+    result = engine.info(fen, only_best=True, max_depth=20)
     assert len(result) == 1
     assert result[0]["depth"] == 10
 
     # tapi berubah jika depthnya lebih besar
     engine.start(fen, depth=15)
     engine.wait()
-    result = engine.info(fen, with_move=True)
+    result = engine.info(fen, only_best=True, max_depth=20)
     assert len(result) == 1
     assert result[0]["depth"] == 15
     # ini ngga bisa diprediksi, kecuali depth=infinite
@@ -108,31 +108,32 @@ def test_batch_analysis(ae_file_empty):
     engine.wait()
 
     for fen in fens:
-        result = engine.info(fen)
+        result = engine.info(fen, only_best=True, max_depth=20)
         assert len(result) == 1
         assert result[0]["depth"] == 10
 
 
-def test_insane_config(ae_file_empty):
+def test_insane_config_on_empty(ae_file_empty):
     engine = ae_file_empty
     fen = Board().fen()
     engine.start(fen, depth=10, config={"MultiPV": 20})
     engine.wait()
 
-    result = engine.info(fen, multipv=20)
-    assert len(result) == 20
-    assert result[0]["depth"] == 10
+    result = engine.info(fen, only_best=False, max_depth=20)
+    assert len(result) >= 20
+    assert result[0]["depth"] >= 10
 
 
-def test_insane_config2(ae_file_full):
+def test_insane_config_on_full(ae_file_full):
     engine = ae_file_full
     fen = Board().fen()
     engine.start(fen, depth=10, config={"MultiPV": 20})
     engine.wait()
 
-    result = engine.info(fen, multipv=20)
-    assert len(result) == 20
+    result = engine.info(fen, only_best=False, max_depth=20)
+    assert len(result) >= 20
+    assert result[0]["depth"] >= 10
 
 
 # TODO: test kasus checkmate
-# TODO: dengan create_copy_ae, check true_multipv
+# TODO: test parameter di engine.start()

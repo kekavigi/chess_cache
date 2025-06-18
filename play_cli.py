@@ -81,7 +81,7 @@ def fetch(
     # hanya hasilkan uci, score, depth yang bagus
 
     multipv = MULTIPV_USER if cutoff is not None else MULTIPV_ENGINE
-    suggests = engine.info(board.fen(), multipv=multipv, true_multipv=False)
+    suggests = engine.info(board.fen(), only_best=False, max_depth=100)
     if cutoff is None or not suggests:
         return suggests
 
@@ -213,7 +213,7 @@ try:
             elif user_input == "SPOIL":
                 cmd_spoil = True
                 continue
-            elif any(_ < MINIMAL_USER_DEPTH for _ in _depths):
+            elif any(_ < MINIMAL_USER_DEPTH for _ in _depths[:MULTIPV_USER]):
                 print("waiting for suggestions first.")
                 sleep(1)
                 continue

@@ -6,8 +6,14 @@ from threading import Thread
 
 from chess import Board
 
-from chess_cache.core import (STARTING_FEN, Database, Info, _parse_uci_info,
-                              _unparse_uci_info, logger_engine)
+from chess_cache.core import (
+    STARTING_FEN,
+    Database,
+    Info,
+    _parse_uci_info,
+    _unparse_uci_info,
+    logger_engine,
+)
 
 
 class UciEngine:
@@ -36,12 +42,12 @@ class UciEngine:
             with open(settings_path) as f:
                 settings = load_json(f)
         except Exception:
-            logger_engine.warning('gagal membaca setting_path')
+            logger_engine.warning("gagal membaca setting_path")
             settings = {}
 
         engine_path = settings.get("engine_path")
         if not os_access(engine_path, F_OK):
-            msg = 'Engine tidak ditemukan'
+            msg = "Engine tidak ditemukan"
             logger_engine.error(msg)
             raise FileNotFoundError(msg)
         if not os_access(engine_path, X_OK):
@@ -150,7 +156,7 @@ class UciEngine:
                     # baris info yang bisa disinggah
                     info = _parse_uci_info(text)
                     self.db.upsert(self.fen, info)
-                    cached = self.db.select(self.fen, info["multipv"], with_move=True)
+                    cached = self._cached_select(self.fen, info["multipv"])
                     assert cached is not None  # agar mypy senang
                     info.update(cached)
                     text = _unparse_uci_info(info)
@@ -168,14 +174,29 @@ class UciEngine:
                     #     ...
                     # else, tampilkan apa yang diberikan mesin saja
 
-                    cached = self.db.select(self.fen, with_move=False)
-                    if cached and cached["pv"]:
+                    cached = self._cached_select(self.fen, multipv=1)
+                    if cached["pv"]:
                         text = f"bestmove {cached['pv'][0]}"
 
                 print(text, flush=True)
         except:
             logger_engine.exception("Something went wrong.")
             raise
+
+    def _cached_select(self, fen: str, multipv: int) -> Info:
+        if multipv == 1:
+            result = self.db.select(fen, only_best=True, max_depth=100)[0]
+
+        else:
+            # TODO: cache this part
+            _tmp = self.db.select(fen, only_best=False, max_depth=100)
+            if multipv <= len(_tmp):
+                result = _tmp[multipv - 1]
+            else:
+                result = {}
+        if "fen" in result:
+            result.pop("fen")
+        return result
 
 
 if __name__ == "__main__":

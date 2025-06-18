@@ -17,7 +17,7 @@ DUMP_DIR = "./dump"
 IMPORT_STT = """
     INSERT INTO master.board AS mas
     SELECT * FROM board AS mem WHERE TRUE
-    ON CONFLICT (fen, multipv) DO UPDATE SET
+    ON CONFLICT (fen) DO UPDATE SET
         depth = excluded.depth,
         score = excluded.score,
         move  = excluded.move

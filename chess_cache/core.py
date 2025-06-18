@@ -6,25 +6,6 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 # MIT License Copyright (c) 2020 Tomasz Sobczyk
 # GNU GPLv3 (C) 2012-2021 Niklas Fiekas <niklas.fiekas@backscattering.de>
 
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-
 # Spesifikasi protokol UCI: https://wbec-ridderkerk.nl/html/UCIProtocol.html
 
 import logging
@@ -309,7 +290,7 @@ class Database:
 
         Table board akan otomatis dibuat jika tidak ada di database. Karena
         posisi catur yang disinggah banyak, database dibuat sekecil mungkin
-        dan hanya menyinggah informasi "fen", "multipv", "depth", "score", 
+        dan hanya menyinggah informasi "fen", "multipv", "depth", "score",
         dan "move". Tidak ada ROWID. PRIMARY KEY adalah komposit nilai
         ("fen", "multipv"). Menggunakan mode jurnal WAL dengan AUTOCHECKPOINT.
 
@@ -319,6 +300,9 @@ class Database:
         Args:
             uri: URI lokasi database.
         """
+
+        # TODO: bikin tabel version di database; jika < program, program raise Error
+        # TODO: bikin script migration versi database
 
         def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict[str, Any]:
             d = {}
@@ -334,10 +318,10 @@ class Database:
         self.sql = sqlite3.connect(
             uri,
             uri=True,
-            autocommit=sqlite3.LEGACY_TRANSACTION_CONTROL,
             isolation_level=None,
             check_same_thread=False,
         )
+        self.sql.autocommit = sqlite3.LEGACY_TRANSACTION_CONTROL
         self.sql.row_factory = dict_factory
         script = """
                 PRAGMA journal_mode = wal;
@@ -350,11 +334,10 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS board(
                     fen         BLOB    NOT NULL,
-                    multipv     INTEGER NOT NULL,
                     depth       INTEGER NOT NULL,
                     score       INTEGER NOT NULL,
                     move        INTEGER,
-                    PRIMARY KEY (fen, multipv)
+                    PRIMARY KEY (fen)
                     ) WITHOUT ROWID;
                 """
         # PRAGMA cache_size = -4096000;
@@ -378,54 +361,74 @@ class Database:
     def select(
         self,
         fen: str,
-        multipv: int = 1,
-        with_move: bool = False,
-    ) -> Info | None:
+        only_best: bool = False,
+        max_depth: int = 1,
+    ) -> list[Info]:
         """Mendapatkan info dari suatu posisi catur.
 
         Args:
             fen: Posisi catur dalam notasi FEN.
-            multipv: Urutan principal move yang ingin dicari.
-            with_move: Pilihan untuk menyertakan daftar bestmove.
+            with_move: Pilihan untuk hanya menghasilkan PV terbaik.
+            max_depth: Banyak maksimum rangkaian move yang perlu disertakan
+                di masing-masing PV.
         """
 
-        stt = """
-            SELECT multipv, depth, score, move
-            FROM board WHERE fen=? AND multipv=?
-        """
-        efen = encode_fen(fen)
-        info = self.sql.execute(stt, (efen, multipv)).fetchone()  # type: Info | None
-        if not info:
-            return None
+        stt_info = "SELECT depth, score FROM board WHERE fen=?"
+        stt_pv = "SELECT move FROM board WHERE fen=?"
 
-        # dapatkan rangkaian balasan
-        pv = NUM_TO_UCI.get(info.pop("move"))
-        info["pv"] = [pv] if pv is not None else []
-        if pv is not None and with_move:
-            stt = "SELECT move FROM board WHERE fen=? AND multipv=1"
-            board = Board(fen)
-            depth = info["depth"] - 1
+        board = Board(fen)
+        results = []
+        short_fen = lambda fen: " ".join(fen.split(maxsplit=4)[:-1])  # TODO: optimize
 
-            try:
-                while depth > 0:
-                    # dapatkan next best move
-                    board.push_uci(pv)  # type: ignore[arg-type]
+        # dapatkan info
+        if only_best:
+            efen = encode_fen(board.fen())
+            info = self.sql.execute(stt_info, (efen,)).fetchone()
+            if not info:
+                return []
 
-                    efen = encode_fen(board.fen())
-                    result = self.sql.execute(stt, (efen,)).fetchone()
-                    if not result:
-                        break
-                    pv = NUM_TO_UCI.get(result["move"])
-                    info["pv"].append(pv)
-                    depth -= 1
-            except:
-                # TODO: database bermasalah, tapi dengan mengabaikannya
-                # akan heal sendiri, kenapa? apakah iya memang heal?
-                # race condition dengan upsert di UciEngine.parse_output?
-                logger_db.warning("Something fishy happening", exc_info=True)
-                pass
+            info["fen"] = short_fen(board.fen())
+            info["pv"] = []
+            results.append(info)
 
-        return info
+        else:
+            max_depth -= 1
+            for move in board.legal_moves:
+                board.push(move)
+
+                efen = encode_fen(board.fen())
+                info = self.sql.execute(stt_info, (efen,)).fetchone()
+                if info:
+                    info["fen"] = short_fen(board.fen())
+                    info["pv"] = [move.uci()]
+                    info["score"] *= -1
+                    info["depth"] += 1
+                    results.append(info)
+                board.pop()
+
+        # dapatkan pv
+        for info in results:
+            board.set_fen(info["fen"])
+            depth = max_depth
+
+            while depth > 0:
+                efen = encode_fen(board.fen())
+                result = self.sql.execute(stt_pv, (efen,)).fetchone()
+                if not result or result["move"] not in NUM_TO_UCI:
+                    break
+
+                pv = NUM_TO_UCI[result["move"]]
+                info["pv"].append(pv)
+                depth -= 1
+
+                board.push_uci(pv)
+
+        # sort
+        results.sort(key=lambda d: (d["depth"], d["score"]), reverse=True)
+        for pv, info in enumerate(results, start=1):
+            info["multipv"] = pv
+
+        return results
 
     def upsert(self, fen: str, info: Info) -> None:
         """Menyimpan atau memperbarui info dari suatu posisi catur.
@@ -437,69 +440,68 @@ class Database:
 
         Args:
             fen: Posisi catur dalam notasi FEN.
-            multipv: Urutan principal move yang ingin dicari.
-            with_move: Pilihan untuk menyertakan daftar bestmove.
+            info: Hasil analisa dari posisi.
         """
 
-        stt = """
-            INSERT INTO board (fen, multipv, depth, score, move)
-            VALUES (:fen, :multipv, :depth, :score, :move)
-            ON CONFLICT (fen, multipv) DO UPDATE SET
+        stt_info = "SELECT depth FROM board WHERE fen=?"
+        stt_upsert = """
+            INSERT INTO board (fen, depth, score, move)
+            VALUES (:fen, :depth, :score, :move)
+            ON CONFLICT (fen) DO UPDATE SET
                 depth = excluded.depth,
                 score = excluded.score,
                 move  = excluded.move
         """
+
         board = Board(fen)
         info_ = info.copy()
-        # info_ akan digunakan sebagai "taksiran" hasil analisis mesin catur
-        # untuk semua move di info['pv'], dengan beberapa penyesuaian
+        iters = []
 
         try:
-            with self.sql as conn:
-                for num, move in enumerate(info_["pv"]):
+            for uci in info_["pv"]:
+                # simpan posisi saat ini dan next uci
+                _ = encode_fen(board.fen()), UCI_TO_NUM[uci]
+                iters.append(_)
 
-                    # loop sampai nol
+                board.push_uci(uci)
+
+        except (IllegalMoveError, KeyError):
+            # posisi/analisa catur non-standard
+            raise ValueError("Bukan posisi/analisa catur standar")
+
+        else:
+            start = 0
+            if info_["multipv"] != 1:
+                iters.pop(0)  # jangan update multipv 1 di db dengan multipv!=1
+                info_["score"] *= -1  # ubah sudut pandang score
+                info_["depth"] -= 1  # kurangi depth
+                start += 1
+
+            with self.sql as conn:
+                for num, (fen, move) in enumerate(iters, start=start):
                     if info_["depth"] == 0:
                         break
 
-                    fen = board.fen()
-
                     # bandingkan dengan hasil singgahan
-                    old_info = self.select(fen, info_["multipv"])
-                    if old_info and old_info["depth"] > info_["depth"]:
-                        # hentikan menyinggah karena posisi ini pernah dianalisis
+                    _ = self.sql.execute(stt_info, (fen,)).fetchone() or {"depth": 0}
+                    old_depth = _["depth"]
+
+                    if old_depth > info_["depth"]:
+                        # hentikan menyinggah karena posisi ini pernah dianalisa
                         # dan depthnya lebih besar daripada depth hasil taksiran
                         break
-                    elif old_info and old_info["depth"] == info_["depth"] and num != 0:
-                        # hentikan menyinggah karena posisi ini pernah dianalisis
-                        # walau depthnya sama, posisi ini lebih baik karena yang
-                        # kita miliki hanyalah taksiran/ekstrapolasi
+                    elif old_depth == info_["depth"] and num != 0:
+                        # hentikan menyinggah karena posisi ini pernah dianalisa
+                        # walau depthnya sama, posisi ini lebih baik karena data
+                        # yang kita akan update hanyalah taksiran/ekstrapolasi
                         break
 
-                    # untuk iterasi pertama; induk
-                    info_["fen"] = encode_fen(fen)
-                    info_["move"] = UCI_TO_NUM[move]
-                    conn.execute(stt, info_)
+                    info_["fen"], info_["move"] = fen, move
+                    conn.execute(stt_upsert, info_)
 
-                    # untuk semua iterasi berikutnya; keturunannya
-                    board.push_uci(move)
-                    info_["multipv"] = 1  # walau multipv induk mungkin !=1
+                    # khusus untuk semua iterasi berikutnya; keturunannya
                     info_["score"] *= -1  # ubah sudut pandang score
                     info_["depth"] -= 1  # kurangi depth
-
-        except (IllegalMoveError, KeyError):
-            # aman untuk mengasumsikan daftar move di pv bukan
-            # rangkaian gerakan catur standar. Jadi analisa ini
-            # bukan posisi standar, sehingga tidak usah di upsert
-
-            # TODO: buat custom error
-            raise ValueError("Data tidak sahih atau bukan permainan catur standar")
-
-        except:
-            logger_db.exception("Something went wrong.", extra={"extra": info_})
-            raise
-
-        return
 
     def to_json(self) -> list[Info]:
         cur = self.sql.execute("SELECT * FROM board")
@@ -511,9 +513,9 @@ class Database:
 
     def from_json(self, json: list[Info]) -> None:
         stt = """
-            INSERT INTO board (fen, multipv, depth, score, move)
-            VALUES (:fen, :multipv, :depth, :score, :move)
-            ON CONFLICT (fen, multipv) DO UPDATE SET
+            INSERT INTO board (fen, depth, score, move)
+            VALUES (:fen, :depth, :score, :move)
+            ON CONFLICT (fen) DO UPDATE SET
                 depth = excluded.depth,
                 score = excluded.score,
                 move  = excluded.move
@@ -685,59 +687,9 @@ class AnalysisEngine:
         self._thread.daemon = True
         self._thread.start()
 
-    def info(
-        self,
-        fen: str,
-        multipv: int = 1,
-        true_multipv: bool = True,
-        with_move: bool = False,
-    ) -> list[Info]:
-        """Mendapatkan singgahan hasil analisa posisi catur.
-
-        Args:
-            fen: Posisi catur dalam notasi FEN.
-            multipv: Urutan principal move yang ingin dicari.
-            true_multipv: Pilihan untuk hanya menggunakan info MultiPV yang
-                dihasilkan oleh mesin catur.
-            with_move: Pilihan untuk menyertakan daftar bestmove.
-        """
-
-        if true_multipv:
-            # pada dasarnya, "SELECT * FROM board WHERE fen=fen AND multipv=pv";
-            # dengan pv berada di rentang [1, multipv]
-            results = []
-            for pv in range(multipv):
-                info = self.db.select(
-                    fen,
-                    multipv=pv + 1,
-                    with_move=with_move,
-                )
-                if info:
-                    results.append(info)
-        else:
-            # pada dasarnya, "SELECT * FROM board WHERE fen=fen AND multipv=1";
-            # dengan fen adalah semua anak yang mungkin dari posisi saat ini
-            board = Board(fen)
-            results = []
-            for move in board.legal_moves:
-                board.push(move)
-                info = self.db.select(board.fen(), multipv=1, with_move=with_move)
-                if info:
-                    info["score"] *= -1
-                    info["depth"] += 1
-                    info["pv"].insert(0, move.uci())
-                    results.append(info)
-                board.pop()
-
-            # sort
-            results.sort(key=lambda d: (d["depth"], d["score"]), reverse=True)
-            for pv, info in enumerate(results, start=1):
-                info["multipv"] = pv
-
-            # limit
-            results = results[:multipv]
-
-        return results
+    # TODO: cache?
+    def info(self, fen: str, only_best: bool = False, max_depth: int = 1) -> list[Info]:
+        return self.db.select(fen, only_best, max_depth)
 
     def shutdown(self) -> None:
         "Menghentikan mesin catur dan database."

@@ -25,7 +25,7 @@ class JSONFormatter(logging.Formatter):
             "processId": record.process,
             "thread": record.threadName,
             "locationInfo": {"fileName": record.filename, "lineNumber": record.lineno},
-            "extra": record.__dict__.get('extra', None),
+            "extra": record.__dict__.get("extra", None),
         }
 
         if self.tags:
