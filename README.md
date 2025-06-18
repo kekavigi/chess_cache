@@ -2,9 +2,9 @@
 
 Ini adalah proyek saya menggabungkan mesin catur seperti Stockfish, dengan database yang menyinggah hasil analisa posisi, agar lebih efektif saat digunakan. Sebagai contoh alasan saya membuat ini: ketika Anda menggunakan antarmuka GUI seperti Nibbler atau EnCroissant, pernahkah Anda menghabiskan waktu lama menganalisa suatu posisi, lalu secara tidak sengaja menganalisa posisi lain (misal karena *mouse-slip*)? Malang sekali, waktu yang Anda habiskan terbuang percuma karena analisa yang Anda tunggu hilang, dan perlu diulang dari awal lagi. Contoh lain, Anda telah menghabiskan waktu menganalisa posisi di suatu program, tetapi tidak ada cara mudah menggunakan analisa Anda di program lain, *ugh*. Selain dua hal itu, saya juga penasaran, ingin membuat database yang berisi analisa semua posisi catur permainan standar; sesuatu yang tidak realistis, tapi apa salahnya mencoba? Saya juga ingin menggunakan proyek ini sebagai tempat berlatih menjadi developer yang baik.
 
-# Fossil
+## Fossil
 
-Jika Anda membaca ini di Github/Gitlab, Anda sebenarnya membaca *mirror* dari repo [Fossil](https://fossil-scm.org/) *self-hosted* di laptop saya. Saya menggunakan Fossil karena mengamati SCM ini lebih sesuai dengan kebutuhan saya, sekaligus karena ingin mempelajari SCM selain Git. Saya tidak (minimalnya, belum) dapat menerima kontribusi berupa kode, karena sifat proyek ini yang "*just for fun*", dan karena ada beberapa hal yang ingin saya coba buat/kembangkan. Anda dapat mem-*fork* repo ini, itu yang pasti.
+Jika Anda membaca ini di Github/Gitlab, Anda sebenarnya membaca *mirror* dari repo [Fossil](https://fossil-scm.org/) *self-hosted* di laptop saya. Saya menggunakan Fossil karena mengamati SCM ini lebih sesuai dengan kebutuhan saya, sekaligus karena ingin mempelajari SCM selain Git. Saya belum/tidak dapat menerima kontribusi berupa kode, karena sifat proyek ini yang "*just for fun*", dan karena ada beberapa hal yang ingin saya coba buat/kembangkan; anggaplah repo ini sebagai *public source*, bukan *open source*. Anda dapat mem-*fork* repo ini, itu yang pasti.
 
 ## Usaha terkait
 
