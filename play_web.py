@@ -47,6 +47,24 @@ def get_info(fen):
     else:
         return db.select(fen, max_depth=10)
 
+@app.get("/uv/info/<path:fen>")
+def uv_get_info(fen):
+    db = get_db()
+    try:
+        board = Board(fen)  # TODO: optimalkan cara cek keabsahan FEN
+    except ValueError:
+        return {"status": "Invalid FEN", "info": fen}, 400
+    else:
+        results = db.select(fen, max_depth=10)
+        for info in results:
+            board.set_fen(fen)
+            movestack = info.pop('pv')
+            info['pv'] = []
+            for uci in movestack:
+                san = board.san(board.parse_uci(uci))
+                info['pv'].append(san)
+                board.push_uci(uci)
+        return results
 
 if __name__ == "__main__":
     app.run(port=9900)

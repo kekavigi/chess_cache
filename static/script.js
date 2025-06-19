@@ -1,71 +1,63 @@
 var board = null
 var game = new Chess()
-var $status = $('#status')
 var $fen = $('#fen')
 var $pgn = $('#pgn')
 
-function onDragStart (source, piece, position, orientation) {
-// do not pick up pieces if the game is over
-if (game.game_over()) return false
+function onDragStart(source, piece, position, orientation) {
+    // do not pick up pieces if the game is over
+    if (game.game_over()) return false
 
-// only pick up pieces for the side to move
-if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-    (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
-    return false
+    // only pick up pieces for the side to move
+    if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+        (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+        return false
+    }
 }
-}
 
-function onDrop (source, target) {
-// see if the move is legal
-var move = game.move({
-    from: source,
-    to: target,
-    promotion: 'q' // NOTE: always promote to a queen for example simplicity
-})
+function onDrop(source, target) {
+    // see if the move is legal
+    var promotion = 'q';
+    var check = game.move({ from: source, to: target, promotion: promotion })
+    if (check === null) return 'snapback'
+    game.undo()
 
-// illegal move
-if (move === null) return 'snapback'
+    var qualified = (target[1] === '1' || target[1] === '8') && game.get(source).type === 'p';
+    if (qualified) promotion = prompt('promote to?', 'q');
+    game.move({ from: source, to: target, promotion: promotion })
 
-updateStatus()
+    updateStatus()
 }
 
 // update the board position after the piece snap
 // for castling, en passant, pawn promotion
-function onSnapEnd () {
-board.position(game.fen())
+function onSnapEnd() {
+    board.position(game.fen())
 }
 
-function updateStatus () {
-var status = ''
+function updateStatus() {
+    var fen = game.fen();
 
-var moveColor = 'White'
-if (game.turn() === 'b') {
-    moveColor = 'Black'
-}
+    $fen.html(fen)
+    $pgn.html(game.pgn())
 
-// checkmate?
-if (game.in_checkmate()) {
-    status = 'Game over, ' + moveColor + ' is in checkmate.'
-}
-
-// draw?
-else if (game.in_draw()) {
-    status = 'Game over, drawn position'
-}
-
-// game still on
-else {
-    status = moveColor + ' to move'
-
-    // check?
-    if (game.in_check()) {
-    status += ', ' + moveColor + ' is in check'
-    }
-}
-
-$status.html(status)
-$fen.html(game.fen())
-$pgn.html(game.pgn())
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+            var results = JSON.parse(xhttp.responseText);
+            var _html = "";
+            for (var info of results) {
+                console.log(info);
+                _html += "<p>";
+                _html += info.multipv + ") ";
+                _html += "<b>depth " + info.depth + "</b> ";
+                _html += "score " + (info.score >= 0 ? '+' : '') + (info.score/100).toFixed(2) + " ";
+                _html += "<em>moves: " + info.pv.map(item => `<span>${item}</span>`).join(' ') + "</em></p>";
+            }
+            document.getElementById("info").innerHTML = _html;
+        }
+    };
+    xhttp.open("GET", "/uv/info/" + fen, true);
+    xhttp.send();
 }
 
 var config = {
