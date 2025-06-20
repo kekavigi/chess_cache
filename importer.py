@@ -98,6 +98,7 @@ def process(args) -> None:
         logger_imp.info("upserting database")
         db.sql.execute(f"ATTACH DATABASE '{db_name}' AS master")
         db.sql.execute(IMPORT_STT)
+        db.sql.execute('ANALYZE master')
         db.sql.execute("DETACH master")
 
         # Delete setelah upsert berhasil

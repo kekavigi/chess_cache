@@ -25,8 +25,10 @@ from chess import Board, IllegalMoveError
 
 from .logger import JSONFormatter
 
+# from line_profiler import profile
+
 # TODO: tidak usah gunakan module chess, kita kurang lebih hanya butuh atribut
-# berikut: fen, set_fen, push_uci, dan copy. Ide, buat representasi papan
+# berikut: fen, set_fen, push_uci, dan legal_moves. Ide, buat representasi papan
 # dalam bentuk bitboard. Empat atribut tersebut seharusnya mudah dibuat, dan
 # itu juga akan meringkas kode di encode_fen()
 
@@ -104,6 +106,7 @@ UCI_TO_NUM, NUM_TO_UCI = uci_int_mapping()
 
 
 @lru_cache(maxsize=4096)
+# @profile
 def encode_fen(fen: str) -> bytes:
     # Didasarkan oleh kode oleh Tomasz Sobczyk
     # https://github.com/official-stockfiPiecesh/nnue-pytorch/blob/master/lib/nnue_training_data_formats.h#L4615
@@ -430,6 +433,7 @@ class Database:
 
         return results
 
+    # @profile
     def upsert(self, fen: str, info: Info) -> None:
         """Menyimpan atau memperbarui info dari suatu posisi catur.
 
