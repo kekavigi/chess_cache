@@ -10,12 +10,15 @@
 </head>
 
 <body>
-    <h1 class="row">chess_cache</h1>
+    <header>
+        <h1 >chess_cache</h1>
+        <p id="fen"></p>
+    </header>
     <div class="row">
         <div class="column">
-            <div id="fen"></div>
-            <div id="myBoard" style="width: 500px"></div>
-            <div id="pgn"></div>
+            <div id="myBoard" style="width: 400px"></div>
+            <button onclick="takeBack()">undo</button>
+            <div id="pgn" style="width: 400px"></div>
         </div>
         <div class="column" id="info"></div>
     </div>
