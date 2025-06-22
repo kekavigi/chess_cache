@@ -1,23 +1,18 @@
+import atexit
 import os
-from flask import Flask, request, send_from_directory, g, render_template
-from chess import Board
 
-from chess_cache.core import Database
+from chess import Board
+from flask import Flask, g, render_template, request, send_from_directory
+
+from chess_cache.core import AnalysisEngine
 
 app = Flask(__name__)
+engine = AnalysisEngine(
+    engine_path="engine/stockfish",
+    database_path="data.sqlite",
+)
 
-
-def get_db():
-    if "db" not in g:
-        g.db = Database("file:lichess.sqlite?mode=ro")
-    return g.db
-
-
-@app.teardown_appcontext
-def close_db(error):
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
+atexit.register(engine.shutdown)
 
 
 @app.route("/favicon.ico")
@@ -29,42 +24,61 @@ def favicon():
     )
 
 
-###
-
 
 @app.get("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
 @app.get("/info/<path:fen>")
 def get_info(fen):
-    db = get_db()
     try:
         board = Board(fen)  # TODO: optimalkan cara cek keabsahan FEN
     except ValueError:
         return {"status": "Invalid FEN", "info": fen}, 400
     else:
-        return db.select(fen, max_depth=10)
+        return engine.info(fen, max_depth=10)
+
 
 @app.get("/uv/info/<path:fen>")
 def uv_get_info(fen):
-    db = get_db()
+    try:
+        board = Board(fen)
+    except ValueError:
+        return {"status": "Invalid FEN", "info": fen}, 400
+    else:
+        results = engine.info(fen, max_depth=10)
+        for info in results:
+            board.set_fen(fen)
+            movestack = info.pop("pv")
+            info["pv"] = []
+            for uci in movestack:
+                san = board.san(board.parse_uci(uci))
+                info["pv"].append(san)
+                board.push_uci(uci)
+        return results
+
+
+@app.post("/uv/analysis")
+def uv_process_analysis():
+    data = request.get_json()
+    print("yeye")
+    if "fen" not in data:
+        return {"status": "invalid POST request", "info": "No FEN data"}, 400
+    fen = data["fen"]
+
     try:
         board = Board(fen)  # TODO: optimalkan cara cek keabsahan FEN
     except ValueError:
         return {"status": "Invalid FEN", "info": fen}, 400
     else:
-        results = db.select(fen, max_depth=10)
-        for info in results:
-            board.set_fen(fen)
-            movestack = info.pop('pv')
-            info['pv'] = []
-            for uci in movestack:
-                san = board.san(board.parse_uci(uci))
-                info['pv'].append(san)
-                board.push_uci(uci)
-        return results
+        old_info = engine.info(fen, only_best=True, max_depth=0)
+        if old_info and old_info[0]["depth"] > 35:
+            return {"status": "Request denied."}, 403
+
+        engine.start(fen, 35)
+        return {"status": "OK"}, 200
+
 
 if __name__ == "__main__":
     app.run(port=9900)

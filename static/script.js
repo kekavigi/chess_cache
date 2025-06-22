@@ -37,8 +37,17 @@ function onSnapEnd() {
 function takeBack() {
     game.undo();
     board.position(game.fen());
-
     updateStatus();
+}
+
+function requestAnalysis() {
+    var xhttp = new XMLHttpRequest();
+    xhttp.open("POST", "/uv/analysis");
+    xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
+    const body = JSON.stringify({
+        fen: game.fen(),
+    });
+    xhttp.send(body);
 }
 
 function updateStatus() {
@@ -53,7 +62,6 @@ function updateStatus() {
             var results = JSON.parse(xhttp.responseText);
             var _html = "<ol>";
             for (var info of results) {
-                console.log(info);
                 _html += "<li>";
                 _html += "<b>depth " + info.depth + "</b> ";
                 _html += "score " + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + " ";
@@ -66,7 +74,6 @@ function updateStatus() {
     xhttp.open("GET", "/uv/info/" + fen, true);
     xhttp.send();
 }
-
 
 var config = {
     pieceTheme: 'static/img/chesspieces/wikipedia/{piece}.png',
