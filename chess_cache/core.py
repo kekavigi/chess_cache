@@ -133,8 +133,10 @@ def encode_fen(fen: str) -> bytes:
 
     turn_is_black = splitted[1] == "b"
     castling_right = splitted[2]
+
     _ep = splitted[3]
-    ep_file = CHESS_FILE[_ep[0]] if _ep != "-" else []
+    _ep_exist = _ep != "-"
+    ep_file = CHESS_FILE[_ep[0]] if _ep_exist else []
 
     # enkode semua piece di papan
     nibble, occupancy, bitcount = 0, 0, 64
@@ -149,7 +151,7 @@ def encode_fen(fen: str) -> bytes:
         ptype = 2 * ptype - 1
 
         if ptype == 1:
-            if _ep and square in ep_file:
+            if _ep_exist and square in ep_file:
                 nibble = nibble << 4 | 12
             else:
                 nibble = nibble << 4 | ptype - pcolor
@@ -381,33 +383,38 @@ class Database:
 
         board = Board(fen)
         results = []
-        short_fen = lambda fen: " ".join(fen.split(maxsplit=4)[:-1])  # TODO: optimize
 
-        # dapatkan info
-        if only_best:
-            efen = encode_fen(board.fen())
-            info = self.sql.execute(stt_info, (efen,)).fetchone()
-            if not info:
-                return []
-
-            info["fen"] = short_fen(board.fen())
-            info["pv"] = []
-            results.append(info)
-
-        else:
+        if not only_best:
+            # dapatkan info semua anak
             max_depth -= 1
             for move in board.legal_moves:
                 board.push(move)
 
-                efen = encode_fen(board.fen())
+                efen = encode_fen(board.epd())
                 info = self.sql.execute(stt_info, (efen,)).fetchone()
                 if info:
-                    info["fen"] = short_fen(board.fen())
+                    info["fen"] = board.epd()
                     info["pv"] = [move.uci()]
                     info["score"] *= -1
                     info["depth"] += 1
                     results.append(info)
                 board.pop()
+
+        if only_best or not results:
+            # dapatkan satu info terbaik
+            # atau coba isi results, jika metode sebelumnya gagal :/
+
+            if not results:
+                max_depth += 1
+
+            efen = encode_fen(board.epd())
+            info = self.sql.execute(stt_info, (efen,)).fetchone()
+            if not info:
+                return []
+
+            info["fen"] = board.epd()  # tidak menyertakan halfmove dan fullmove
+            info["pv"] = []
+            results.append(info)
 
         # dapatkan pv
         for info in results:
@@ -415,7 +422,7 @@ class Database:
             depth = max_depth
 
             while depth > 0:
-                efen = encode_fen(board.fen())
+                efen = encode_fen(board.epd())
                 result = self.sql.execute(stt_pv, (efen,)).fetchone()
                 if not result or result["move"] not in NUM_TO_UCI:
                     break
@@ -428,8 +435,8 @@ class Database:
 
         # sort
         results.sort(key=lambda d: (d["depth"], d["score"]), reverse=True)
-        for pv, info in enumerate(results, start=1):
-            info["multipv"] = pv
+        for _, info in enumerate(results, start=1):
+            info["multipv"] = _
 
         return results
 
@@ -482,7 +489,7 @@ class Database:
                 start += 1
 
             with self.sql as conn:
-                for num, (fen, move) in enumerate(iters, start=start):
+                for num, (fen, move) in enumerate(iters, start=start):  # type: ignore[assignment]
                     if info_["depth"] == 0:
                         break
 
@@ -523,7 +530,7 @@ class Database:
                 depth = excluded.depth,
                 score = excluded.score,
                 move  = excluded.move
-            WHERE excluded.depth >= depth
+            WHERE excluded.depth > depth
         """
         with self.sql as conn:
             for row_ in json:
