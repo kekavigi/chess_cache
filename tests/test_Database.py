@@ -16,7 +16,7 @@ def db_file(tmp_path):
         yield db
     except:
         raise
-    finally:
+    else:
         db.close()
 
 
@@ -27,7 +27,7 @@ def db_memory_empty():
         yield db
     except:
         raise
-    finally:
+    else:
         db.close()
 
 
@@ -45,7 +45,7 @@ def db_memory_full(db_memory_empty):
                 conn.execute(stt, row)
     except:
         raise
-    finally:
+    else:
         true_db.close()
 
     return test_db
