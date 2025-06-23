@@ -9,17 +9,13 @@ from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
 
 from chess_cache.core import AnalysisEngine
+from chess_cache.env import load_config
+
+
+CONFIG = load_config("config.shared.toml")
 
 app = Flask(__name__)
-engine = AnalysisEngine(
-    engine_path="engine/stockfish",
-    database_path="lichess.sqlite",
-    configs={
-        "EvalFile": "engine/nn-1c0000000000.nnue",
-        "Threads": 4,
-        "Hash": 2048,
-    },
-)
+engine = AnalysisEngine(**CONFIG["engine"])
 
 atexit.register(engine.shutdown)
 
@@ -91,4 +87,4 @@ def uv_process_analysis():
 
 
 if __name__ == "__main__":
-    app.run(port=9900, debug=True)
+    app.run(**CONFIG["play_web"].get("flask", {}))

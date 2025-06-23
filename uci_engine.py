@@ -45,17 +45,17 @@ class UciEngine:
             logger_engine.warning("gagal membaca setting_path")
             settings = {}
 
-        engine_path = settings.get("engine_path")
-        if not os_access(engine_path, F_OK):
+        binary_path = settings.get("binary_path")
+        if not os_access(binary_path, F_OK):
             msg = "Engine tidak ditemukan"
             logger_engine.error(msg)
             raise FileNotFoundError(msg)
-        if not os_access(engine_path, X_OK):
+        if not os_access(binary_path, X_OK):
             msg = "Engine tidak executable."
             logger_engine.error(msg)
             raise PermissionError(msg)
         self.engine = Popen(
-            engine_path,
+            binary_path,
             stdin=PIPE,
             stdout=PIPE,
             universal_newlines=True,

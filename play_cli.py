@@ -15,15 +15,21 @@ from rich.table import Table
 from rich.text import Text
 
 from chess_cache.core import AnalysisEngine, Info
+from chess_cache.env import load_config
 
 RE_COLORIZE = re.compile(r"([kqrnbp])")
 PROG_CHOICE = ["", "SPOIL", "UNDO"]
+CONFIG = load_config("config.shared.toml")
 
-BOOK_MOVE = 2
-MULTIPV_USER = 3
-MULTIPV_ENGINE = 7
-MINIMAL_USER_DEPTH = 24
-SCORE_CUTOFF = 100  # cp
+BOOK_MOVE = CONFIG["play_cli"].get("book_move", 2)
+
+_tmp = CONFIG["play_cli"]["user"]
+MULTIPV_USER = _tmp["multipv"]
+MINIMAL_USER_DEPTH = _tmp["analysis_depth"]["min"]
+
+_tmp = CONFIG["play_cli"]["engine"]
+MULTIPV_ENGINE = _tmp["multipv"]
+SCORE_CUTOFF = _tmp["score_cutoff"]
 
 
 class UserInput(PromptBase):
@@ -177,15 +183,7 @@ console, layout = new_screen()
 board = Board()
 try:
     print("starting...")
-    engine = AnalysisEngine(
-        engine_path="engine/stockfish",
-        database_path="data.sqlite",
-        configs={
-            "EvalFile": "engine/nn-1c0000000000.nnue",
-            "Threads": 2,
-            "Hash": 2048,
-        },
-    )
+    engine = AnalysisEngine(**CONFIG["engine"])
 
     while True:
         # user-to-move; as white

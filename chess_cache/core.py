@@ -557,25 +557,26 @@ class AnalysisEngine:
 
     def __init__(
         self,
-        engine_path: str = "./stockfish",
+        binary_path: str = "./stockfish",
         database_path: str = ":memory:",
         configs: Config = {},
+        **kwargs
     ):
         """Menginisialisasi mesin catur dan database.
 
         Args:
-            engine_path: Alamat dari mesin catur.
+            binary_path: Alamat dari mesin catur.
             database_path: Alamat dari berkas database SQLite.
             configs: Dict berisi UCI setoptions untuk dikirim ke
                 mesin catur.
         """
 
-        if not os_access(engine_path, F_OK):
+        if not os_access(binary_path, F_OK):
             raise FileNotFoundError("Engine tidak ditemukan.")
-        if not os_access(engine_path, X_OK):
+        if not os_access(binary_path, X_OK):
             raise PermissionError("Engine tidak executable.")
         self._engine = Popen(
-            engine_path,
+            binary_path,
             stdin=PIPE,
             stdout=PIPE,
             universal_newlines=True,
