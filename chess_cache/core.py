@@ -363,6 +363,22 @@ class Database:
         # self.sql.execute('VACUUM')
         self.sql.close()
 
+    def _get_moves(self, board: Board, depth: int) -> list[str]:
+        stt = "SELECT move FROM board WHERE fen=?"
+        move_stack = []
+
+        for _ in range(depth):
+            efen = encode_fen(board.epd())
+            result = self.sql.execute(stt, (efen,)).fetchone()
+            if not result or result["move"] not in NUM_TO_UCI:
+                break
+
+            pv = NUM_TO_UCI[result["move"]]
+            move_stack.append(pv)
+            board.push_uci(pv)
+
+        return move_stack
+
     def select(
         self,
         fen: str,
@@ -378,63 +394,42 @@ class Database:
                 di masing-masing PV.
         """
 
-        stt_info = "SELECT depth, score FROM board WHERE fen=?"
-        stt_pv = "SELECT move FROM board WHERE fen=?"
+        stt = "SELECT depth, score FROM board WHERE fen=?"
 
         board = Board(fen)
         results = []
 
+        efen = encode_fen(board.epd())
+        info = self.sql.execute(stt, (efen,)).fetchone()
+        if not info:
+            return []
+
+        info["pv"] = self._get_moves(board, max_depth)
+        board.set_fen(fen)
+        results.append(info)
+
         if not only_best:
             # dapatkan info semua anak
-            max_depth -= 1
-            for move in board.legal_moves:
-                board.push(move)
+            best_pv = info['pv'][0] if info['pv'] else None
 
+            for move in board.legal_moves:
+                uci = move.uci()
+                if uci == best_pv:
+                    continue
+
+                board.push(move)
                 efen = encode_fen(board.epd())
-                info = self.sql.execute(stt_info, (efen,)).fetchone()
+                info = self.sql.execute(stt, (efen,)).fetchone()
                 if info:
-                    info["fen"] = board.epd()
-                    info["pv"] = [move.uci()]
                     info["score"] *= -1
                     info["depth"] += 1
+                    info["pv"] = self._get_moves(board, max_depth-1)
+                    info['pv'].insert(0, uci)
                     results.append(info)
-                board.pop()
-
-        if only_best or not results:
-            # dapatkan satu info terbaik
-            # atau coba isi results, jika metode sebelumnya gagal :/
-
-            if not results:
-                max_depth += 1
-
-            efen = encode_fen(board.epd())
-            info = self.sql.execute(stt_info, (efen,)).fetchone()
-            if not info:
-                return []
-
-            info["fen"] = board.epd()  # tidak menyertakan halfmove dan fullmove
-            info["pv"] = []
-            results.append(info)
-
-        # dapatkan pv
-        for info in results:
-            board.set_fen(info["fen"])
-            depth = max_depth
-
-            while depth > 0:
-                efen = encode_fen(board.epd())
-                result = self.sql.execute(stt_pv, (efen,)).fetchone()
-                if not result or result["move"] not in NUM_TO_UCI:
-                    break
-
-                pv = NUM_TO_UCI[result["move"]]
-                info["pv"].append(pv)
-                depth -= 1
-
-                board.push_uci(pv)
+                board.set_fen(fen)
 
         # sort
-        results.sort(key=lambda d: (d["depth"], d["score"]), reverse=True)
+        results.sort(key=lambda d: (d["score"], d["depth"]), reverse=True)
         for _, info in enumerate(results, start=1):
             info["multipv"] = _
 

@@ -51,7 +51,7 @@ def uv_get_info(fen):
     except ValueError:
         return {"status": "Invalid FEN", "info": fen}, 400
     else:
-        results = engine.info(fen, max_depth=10)
+        results = engine.info(board.epd(), max_depth=10)
         for info in results:
             board.set_fen(fen)
             movestack = info.pop("pv")
