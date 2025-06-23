@@ -1,7 +1,11 @@
+#!/home/user/.pyenv/shims/python
+
 import atexit
 import os
+from io import StringIO
 
-from chess import Board
+from chess import AmbiguousMoveError, Board, IllegalMoveError, InvalidMoveError
+from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
 
 from chess_cache.core import AnalysisEngine
@@ -9,7 +13,12 @@ from chess_cache.core import AnalysisEngine
 app = Flask(__name__)
 engine = AnalysisEngine(
     engine_path="engine/stockfish",
-    database_path="data.sqlite",
+    database_path="lichess.sqlite",
+    configs={
+        "EvalFile": "engine/nn-1c0000000000.nnue",
+        "Threads": 4,
+        "Hash": 2048,
+    },
 )
 
 atexit.register(engine.shutdown)
@@ -22,7 +31,6 @@ def favicon():
         "favicon.ico",
         mimetype="image/vnd.microsoft.icon",
     )
-
 
 
 @app.get("/")
@@ -62,15 +70,17 @@ def uv_get_info(fen):
 @app.post("/uv/analysis")
 def uv_process_analysis():
     data = request.get_json()
-    print("yeye")
-    if "fen" not in data:
-        return {"status": "invalid POST request", "info": "No FEN data"}, 400
-    fen = data["fen"]
+    if "pgn" not in data:
+        return {"status": "invalid POST request", "info": "No PGN data"}, 400
 
     try:
-        board = Board(fen)  # TODO: optimalkan cara cek keabsahan FEN
-    except ValueError:
-        return {"status": "Invalid FEN", "info": fen}, 400
+        game = read_pgn(StringIO(data["pgn"]))
+        board = Board()  # assume standard game
+        for move in game.mainline_moves():
+            board.push(move)
+        fen = board.epd()
+    except (ValueError, InvalidMoveError, IllegalMoveError, AmbiguousMoveError):
+        return {"status": "Invalid PGN for standard chess game", "info": pgn}, 400
     else:
         old_info = engine.info(fen, only_best=True, max_depth=0)
         if old_info and old_info[0]["depth"] > 35:
@@ -81,4 +91,4 @@ def uv_process_analysis():
 
 
 if __name__ == "__main__":
-    app.run(port=9900)
+    app.run(port=9900, debug=True)
