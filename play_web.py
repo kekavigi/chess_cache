@@ -66,23 +66,20 @@ def uv_get_info(fen):
 @app.post("/uv/analysis")
 def uv_process_analysis():
     data = request.get_json()
-    if "pgn" not in data:
-        return {"status": "invalid POST request", "info": "No PGN data"}, 400
+    if "fen" not in data:
+        return {"status": "invalid POST request", "info": "No fen data"}, 400
 
     try:
-        game = read_pgn(StringIO(data["pgn"]))
-        board = Board()  # assume standard game
-        for move in game.mainline_moves():
-            board.push(move)
-        fen = board.epd()
-    except (ValueError, InvalidMoveError, IllegalMoveError, AmbiguousMoveError):
-        return {"status": "Invalid PGN for standard chess game", "info": pgn}, 400
+        fen = data["fen"]
+        board = Board(fen)  # assume standard game position
+    except ValueError:
+        return {"status": "Invalid FEN", "info": fen}, 400
     else:
         old_info = engine.info(fen, only_best=True, max_depth=0)
         if old_info and old_info[0]["depth"] > 35:
             return {"status": "Request denied."}, 403
 
-        engine.start(fen, 35)
+        engine.start(fen, depth=35)
         return {"status": "OK"}, 200
 
 

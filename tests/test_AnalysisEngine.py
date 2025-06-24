@@ -137,19 +137,19 @@ def test_insane_config_on_full(ae_file_full):
 
 def test_checkmate(ae_file_empty):
     engine = ae_file_empty
-    fen = 'rnbqkbnr/1ppppp2/p6p/6p1/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq g6 0 4'
+    fen = "rnbqkbnr/1ppppp2/p6p/6p1/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq g6 0 4"
     engine.start(fen, depth=20)
     engine.wait()
 
-    result = engine.info(fen, only_best=True ,max_depth=1)
+    result = engine.info(fen, only_best=True, max_depth=1)
     assert result
-    movestack = result[0]['pv']
-    assert len(movestack) == 1 
+    movestack = result[0]["pv"]
+    assert len(movestack) == 1
 
     result = engine.info(fen, only_best=False, max_depth=1)
     assert result
-    movestack = result[0]['pv']
-    assert len(movestack) == 1 
+    movestack = result[0]["pv"]
+    assert len(movestack) == 1
 
 
 # TODO: test parameter di engine.start()

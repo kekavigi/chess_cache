@@ -1,3 +1,5 @@
+import { Chess } from './libs/chess.js';
+
 var board = null
 var game = new Chess()
 var $fen = $('#fen')
@@ -5,7 +7,7 @@ var $pgn = $('#pgn')
 
 function onDragStart(source, piece, position, orientation) {
     // do not pick up pieces if the game is over
-    if (game.game_over()) return false
+    if (game.isGameOver()) return false
 
     // only pick up pieces for the side to move
     if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
@@ -17,8 +19,11 @@ function onDragStart(source, piece, position, orientation) {
 function onDrop(source, target) {
     // see if the move is legal
     var promotion = 'q';
-    var check = game.move({ from: source, to: target, promotion: promotion })
-    if (check === null) return 'snapback'
+    try {
+        game.move({ from: source, to: target, promotion: promotion })
+    } catch (error) {
+        return 'snapback'
+    }
     game.undo()
 
     var qualified = (target[1] === '1' || target[1] === '8') && game.get(source).type === 'p';
@@ -45,7 +50,7 @@ function requestAnalysis() {
     xhttp.open("POST", "/uv/analysis");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
     const body = JSON.stringify({
-        pgn: game.pgn(),
+        fen: game.fen(),
     });
     xhttp.send(body);
 }
@@ -54,7 +59,7 @@ function updateStatus() {
     var fen = game.fen();
 
     $fen.html(fen)
-    $pgn.html(game.pgn())
+    $pgn.html(game.pgn().split(']').pop())
 
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function () {
@@ -82,7 +87,10 @@ var config = {
     onDragStart: onDragStart,
     onDrop: onDrop,
     onSnapEnd: onSnapEnd
-}
-board = Chessboard('myBoard', config)
+};
+board = Chessboard('myBoard', config);
+updateStatus();
 
-updateStatus()
+document.getElementById("undo").addEventListener('click', () => { takeBack() });
+document.getElementById("analyze").addEventListener('click', () => { requestAnalysis() });
+document.getElementById("refresh").addEventListener('click', () => { updateStatus() });

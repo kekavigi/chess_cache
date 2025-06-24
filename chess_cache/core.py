@@ -410,7 +410,7 @@ class Database:
 
         if not only_best:
             # dapatkan info semua anak
-            best_pv = info['pv'][0] if info['pv'] else None
+            best_pv = info["pv"][0] if info["pv"] else None
 
             for move in board.legal_moves:
                 uci = move.uci()
@@ -423,13 +423,17 @@ class Database:
                 if info:
                     info["score"] *= -1
                     info["depth"] += 1
-                    info["pv"] = self._get_moves(board, max_depth-1)
-                    info['pv'].insert(0, uci)
+                    info["pv"] = self._get_moves(board, max_depth - 1)
+                    info["pv"].insert(0, uci)
                     results.append(info)
                 board.set_fen(fen)
 
         # sort
-        results.sort(key=lambda d: (d["score"], d["depth"]), reverse=True)
+        results[1:] = sorted(
+            results[1:],
+            key=lambda d: (d["score"], d["depth"]),
+            reverse=True,
+        )
         for _, info in enumerate(results, start=1):
             info["multipv"] = _
 
@@ -555,7 +559,7 @@ class AnalysisEngine:
         binary_path: str = "./stockfish",
         database_path: str = ":memory:",
         configs: Config = {},
-        **kwargs
+        **kwargs,
     ):
         """Menginisialisasi mesin catur dan database.
 
