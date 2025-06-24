@@ -2,30 +2,18 @@
 <html lang="id">
 
 <head>
-    <link rel="stylesheet" href="{{ url_for('static', filename='libs/chessboard-1.0.0.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <script src="{{ url_for('static', filename='libs/jquery-3.5.1.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='libs/chessboard-1.0.0.min.js') }}"></script>
 </head>
 
 <body>
     <header>
         <h1 >chess_cache</h1>
-        <p id="fen"></p>
+        <p>
+            <a href="explore">explore</a>
+            <a href="info/rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1">raw_request</a>
+            <a href="stats">internal_info</a>
+        </p>
     </header>
-    <div class="row">
-        <div class="column">
-            <div id="myBoard" style="width: 400px"></div>
-            <button id="undo">undo</button>
-            <button id="analyze">analyze</button>
-            <button id="refresh">refresh</button>
-            
-            <div id="pgn" style="width: 400px"></div>
-        </div>
-        <div class="column" id="info"></div>
-    </div>
-    
-    <script type='module' src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 
 </html>

@@ -50,7 +50,7 @@ function requestAnalysis() {
     xhttp.open("POST", "/uv/analysis");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
     const body = JSON.stringify({
-        fen: game.fen(),
+        pgn: game.pgn().split(']').pop().replace('\n', ' ').replace('*', ''),
     });
     xhttp.send(body);
 }
