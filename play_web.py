@@ -66,9 +66,11 @@ def favicon():
         mimetype="image/vnd.microsoft.icon",
     )
 
+
 @app.get("/")
 def index():
     return render_template("index.html")
+
 
 @app.get("/explore")
 def explore():
@@ -84,11 +86,10 @@ def get_info(fen):
     else:
         return engine.info(fen, max_depth=10)
 
-@app.get('/stats')
+
+@app.get("/stats")
 def stats():
-    return {
-        'analysis_queue' : list(q_analysis.q)
-    }
+    return {"analysis_queue": list(q_analysis.q)}
 
 
 @app.get("/uv/info/<path:fen>")
@@ -121,7 +122,7 @@ def uv_process_analysis():
         for move in game.mainline_moves():
             board.push(move)
     except Exception:
-        return {"status": "Invalid PGN", "info": data['pgn']}, 400
+        return {"status": "Invalid PGN", "info": data["pgn"]}, 400
     else:
         # old_info = engine.info(fen, only_best=True, max_depth=0)
         # if old_info and old_info[0]["depth"] > 35:

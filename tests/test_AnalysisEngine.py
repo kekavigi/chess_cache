@@ -31,18 +31,6 @@ def ae_file_empty(tmp_path):
         engine.shutdown()
 
 
-@pytest.fixture
-def ae_file_full(tmp_path):
-    try:
-        copyfile("data.sqlite", f"{tmp_path}/test.sqlite")
-        engine = create_engine(f"file:///{tmp_path}/test.sqlite")
-        yield engine
-    except:
-        raise
-    finally:
-        engine.shutdown()
-
-
 def test_sanity(ae_file_empty):
     engine = ae_file_empty
 
@@ -115,17 +103,6 @@ def test_batch_analysis(ae_file_empty):
 
 def test_insane_config_on_empty(ae_file_empty):
     engine = ae_file_empty
-    fen = Board().fen()
-    engine.start(fen, depth=10, config={"MultiPV": 20})
-    engine.wait()
-
-    result = engine.info(fen, only_best=False, max_depth=20)
-    assert len(result) >= 20
-    assert result[0]["depth"] >= 10
-
-
-def test_insane_config_on_full(ae_file_full):
-    engine = ae_file_full
     fen = Board().fen()
     engine.start(fen, depth=10, config={"MultiPV": 20})
     engine.wait()

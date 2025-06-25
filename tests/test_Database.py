@@ -11,7 +11,6 @@ from chess_cache.core import STARTING_FEN, Database
 @pytest.fixture
 def db_file(tmp_path):
     try:
-        copyfile("data.sqlite", f"{tmp_path}/test.sqlite")
         db = Database(f"file:///{tmp_path}/test.sqlite")
         yield db
     except:
@@ -39,7 +38,7 @@ def db_memory_full(db_memory_empty):
         VALUES (:fen, :depth, :score, :move)
     """
     try:
-        true_db = Database("data.sqlite")
+        true_db = Database("lichess.sqlite")
         with test_db.sql as conn:
             for row in true_db.sql.execute("SELECT * FROM board LIMIT 10").fetchall():
                 conn.execute(stt, row)

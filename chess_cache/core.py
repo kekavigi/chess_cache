@@ -401,16 +401,19 @@ class Database:
 
         efen = encode_fen(board.epd())
         info = self.sql.execute(stt, (efen,)).fetchone()
-        if not info:
+        if info:
+            info["pv"] = self._get_moves(board, max_depth)
+            board.set_fen(fen)
+            results.append(info)
+        elif only_best:
             return []
-
-        info["pv"] = self._get_moves(board, max_depth)
-        board.set_fen(fen)
-        results.append(info)
 
         if not only_best:
             # dapatkan info semua anak
-            best_pv = info["pv"][0] if info["pv"] else None
+            if info and info["pv"]:
+                best_pv = info["pv"][0]
+            else:
+                best_pv = None
 
             for move in board.legal_moves:
                 uci = move.uci()
