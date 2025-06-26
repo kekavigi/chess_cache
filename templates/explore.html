@@ -10,7 +10,7 @@
 
 <body>
     <header>
-        <h1 >chess_cache</h1>
+        <h1>chess_cache</h1>
         <p id="fen"></p>
     </header>
     <div class="row">
@@ -19,12 +19,43 @@
             <button id="undo">undo</button>
             <button id="analyze">analyze</button>
             <button id="refresh">refresh</button>
-            
+
             <div id="pgn" style="width: 400px"></div>
         </div>
-        <div class="column" id="info"></div>
+        <div class="column">
+            <ol id="info">
+            </ol>
+        </div>
     </div>
-    
+    <!-- Untuk data mentah dalam format JSON, kunjungi URL "./info/[notasi fen]" -->
+
+    <div class="row">
+        <details>
+            <summary>Daftar antrian posisi yang akan dianalisa</summary>
+            <ol id="queue">
+            </ol>
+        </details>
+    </div><br>
+
+    <div class="row">
+        <details style="max-width: 60%; text-align: justify;">
+            <summary>Keterangan terkait tampilan analisa</summary>
+            <p>
+                PV pertama berisi analisa balasan terbaik untuk posisi saat ini. PV kedua dan seterusnya (jika ada), adalah
+                hasil analisa dari semua balasan yang mungkin dan telah disinggah, dari posisi saat ini. Hasil-hasil analisa
+                tersebut selanjutnya diurutkan menurun dari nilai <em>score</em> lalu dari <em>depth</em>. Ini artinya, analisa
+                PV ke-<math>N</math> (dengan <math>N>1</math>) yang ditampilkan disini mungkin tidak sama dengan analisa PV 
+                ke-<math>N</math> yang dihasilkan langsung dari mesin catur.
+            </p>
+            <p>
+                Oh... juga ada kasus ketika posisi ini belum pernah dianalisa secara eksplisit, tetapi ada satu atau beberapa
+                posisi induk (misal dari beberapa variasi pembukaan) yang pernah dianalisa, dan posisi ini adalah bagian dari
+                rangkaian balasan terbaik dari posisi-posisi tersebut. Dalam keadaan tersebut, analisa posisi ini adalah hasil
+                ekstrapolasi dari analisa posisi-posisi induk tesebut.
+            </p>
+        </details>
+    </div><br>
+
     <script type='module' src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 

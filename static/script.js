@@ -61,23 +61,39 @@ function updateStatus() {
     $fen.html(fen)
     $pgn.html(game.pgn().split(']').pop())
 
+    // info multipv
     var xhttp = new XMLHttpRequest();
     xhttp.onreadystatechange = function () {
         if (this.readyState == 4 && this.status == 200) {
             var results = JSON.parse(xhttp.responseText);
-            var _html = "<ol>";
+            var _html = "";
             for (var info of results) {
                 _html += "<li>";
                 _html += "<b>depth " + info.depth + "</b> ";
                 _html += "score " + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + " ";
                 _html += "<em>moves: " + info.pv.map(item => `<span>${item}</span>`).join(' ') + "</em></li>";
             }
-            _html += '</ol>'
             document.getElementById("info").innerHTML = _html;
         }
     };
     xhttp.open("GET", "/uv/info/" + fen, true);
     xhttp.send();
+
+    // antrian analisa
+    var xhttp_q = new XMLHttpRequest();
+    xhttp_q.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+            var results = JSON.parse(xhttp_q.responseText);
+            var _html = "";
+            for (var fen of results['analysis_queue']) {
+                _html += "<li>" + fen;
+            }
+            document.getElementById("queue").innerHTML = _html;
+        }
+    };
+    xhttp_q.open("GET", "/uv/stats", true);
+    xhttp_q.send();
+
 }
 
 var config = {

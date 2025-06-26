@@ -69,11 +69,6 @@ def favicon():
 
 @app.get("/")
 def index():
-    return render_template("index.html")
-
-
-@app.get("/explore")
-def explore():
     return render_template("explore.html")
 
 
@@ -87,7 +82,7 @@ def get_info(fen):
         return engine.info(fen, max_depth=10)
 
 
-@app.get("/stats")
+@app.get("/uv/stats")
 def stats():
     return {"analysis_queue": list(q_analysis.q)}
 
@@ -116,21 +111,30 @@ def uv_process_analysis():
     data = request.get_json()
     if "pgn" not in data:
         return {"status": "invalid POST request", "info": "No pgn data"}, 400
+
+    if q_analysis.size == q_analysis.maxsize:
+        return {"status": "Too many requests"}, 429
+
     try:
         board = Board()  # assume standard game position
         game = read_pgn(StringIO(data["pgn"]))
-        for move in game.mainline_moves():
+
+        move_stack = game.mainline_moves()
+        if len(move_stack) > 20:
+            return {"status": "Request denied.", "info": "fullmove is deemed to deep by administrator"}, 403
+                    
+        for move in move_stack:
             board.push(move)
+
     except Exception:
         return {"status": "Invalid PGN", "info": data["pgn"]}, 400
+
     else:
         # old_info = engine.info(fen, only_best=True, max_depth=0)
         # if old_info and old_info[0]["depth"] > 35:
         #     return {"status": "Request denied.", "info": "cached data depth is deemed good enough."}, 403
-        if q_analysis.size == q_analysis.maxsize:
-            return {"status": "Too many requests"}, 429
-        q_analysis.add(board.epd())
 
+        q_analysis.add(board.epd())
         return {"status": "OK"}, 200
 
 
