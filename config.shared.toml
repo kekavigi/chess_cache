@@ -1,10 +1,10 @@
 [engine]
 binary_path = "engine/stockfish"
-database_path = "file:lichess.sqlite?mode=ro"  # sebenarnya URI
+database_path = "file:lichess.sqlite"  # sebenarnya URI
 
 [engine.config]
 EvalFile = "engine/nn-1c0000000000.nnue"
-MultiPV = 5
+MultiPV = 1
 Threads = 4
 Hash = 2048
 

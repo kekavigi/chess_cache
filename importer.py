@@ -13,7 +13,7 @@ from tqdm import tqdm
 from chess_cache.core import MATE_SCORE, Database, Info
 
 CPU_COUNT = 4  # banyak multiprocess
-BATCH_SIZE = 1000
+BATCH_SIZE = 2500
 DUMP_DIR = "./dump"
 IMPORT_STT = """
     INSERT INTO master.board AS mas
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         logger.info("reading dumps")
         db = Database(":memory:")
         with Pool(processes=CPU_COUNT) as pool:
-            iter_ = pool.imap_unordered(process, filenames)
+            iter_ = pool.imap_unordered(process, filenames[::-1])
             for data in tqdm(iter_, total=BATCH_SIZE, ncols=0):
                 db.from_json(data)
 

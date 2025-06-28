@@ -45,8 +45,9 @@ class AnalysisQueue:
         self.thread.join()
 
     def add(self, fen: str):
-        self.q.append(fen)
-        self.size += 1
+        if fen not in self.q:
+            self.q.append(fen)
+            self.size += 1
 
 
 app = Flask(__name__)
@@ -119,7 +120,7 @@ def uv_process_analysis():
         board = Board()  # assume standard game position
         game = read_pgn(StringIO(data["pgn"]))
 
-        move_stack = game.mainline_moves()
+        move_stack = list(game.mainline_moves())
         if len(move_stack) > 20:
             return {"status": "Request denied.", "info": "fullmove is deemed to deep by administrator"}, 403
                     

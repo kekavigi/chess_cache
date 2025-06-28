@@ -434,7 +434,7 @@ class Database:
         # sort
         results[1:] = sorted(
             results[1:],
-            key=lambda d: (d["score"], d["depth"]),
+            key=lambda d: (d["depth"], d["score"]),
             reverse=True,
         )
         for _, info in enumerate(results, start=1):
@@ -482,39 +482,38 @@ class Database:
             # posisi/analisa catur non-standard
             raise ValueError("Bukan posisi/analisa catur standar")
 
-        else:
-            start = 0
-            if info_["multipv"] != 1:
-                iters.pop(0)  # jangan update multipv 1 di db dengan multipv!=1
+        start = 0
+        if info_["multipv"] != 1:
+            iters.pop(0)  # jangan update multipv 1 di db dengan multipv!=1
+            info_["score"] *= -1  # ubah sudut pandang score
+            info_["depth"] -= 1  # kurangi depth
+            start += 1
+
+        with self.sql as conn:
+            for num, (fen, move) in enumerate(iters, start=start):  # type: ignore[assignment]
+                if info_["depth"] == 0:
+                    break
+
+                # bandingkan dengan hasil singgahan
+                _ = self.sql.execute(stt_info, (fen,)).fetchone() or {"depth": 0}
+                old_depth = _["depth"]
+
+                if old_depth > info_["depth"]:
+                    # hentikan menyinggah karena posisi ini pernah dianalisa
+                    # dan depthnya lebih besar daripada depth hasil taksiran
+                    break
+                elif old_depth == info_["depth"] and num != 0:
+                    # hentikan menyinggah karena posisi ini pernah dianalisa
+                    # walau depthnya sama, posisi ini lebih baik karena data
+                    # yang kita akan update hanyalah taksiran/ekstrapolasi
+                    break
+
+                info_["fen"], info_["move"] = fen, move
+                conn.execute(stt_upsert, info_)
+
+                # khusus untuk semua iterasi berikutnya; keturunannya
                 info_["score"] *= -1  # ubah sudut pandang score
                 info_["depth"] -= 1  # kurangi depth
-                start += 1
-
-            with self.sql as conn:
-                for num, (fen, move) in enumerate(iters, start=start):  # type: ignore[assignment]
-                    if info_["depth"] == 0:
-                        break
-
-                    # bandingkan dengan hasil singgahan
-                    _ = self.sql.execute(stt_info, (fen,)).fetchone() or {"depth": 0}
-                    old_depth = _["depth"]
-
-                    if old_depth > info_["depth"]:
-                        # hentikan menyinggah karena posisi ini pernah dianalisa
-                        # dan depthnya lebih besar daripada depth hasil taksiran
-                        break
-                    elif old_depth == info_["depth"] and num != 0:
-                        # hentikan menyinggah karena posisi ini pernah dianalisa
-                        # walau depthnya sama, posisi ini lebih baik karena data
-                        # yang kita akan update hanyalah taksiran/ekstrapolasi
-                        break
-
-                    info_["fen"], info_["move"] = fen, move
-                    conn.execute(stt_upsert, info_)
-
-                    # khusus untuk semua iterasi berikutnya; keturunannya
-                    info_["score"] *= -1  # ubah sudut pandang score
-                    info_["depth"] -= 1  # kurangi depth
 
     def to_json(self) -> list[Info]:
         cur = self.sql.execute("SELECT * FROM board")
