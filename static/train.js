@@ -28,29 +28,39 @@ function onDrop(source, target) {
     if (qualified) promotion = prompt('promote to?', 'q');
     game.move({ from: source, to: target, promotion: promotion })
 
-    updateStatus()
+    getComputerResponse();
 }
 
-// update the board position after the piece snap
-// for castling, en passant, pawn promotion
+function getComputerResponse() {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+            var results = JSON.parse(xhttp.responseText);
+            if (results.length == 0) {
+                document.getElementById("info").innerHTML = 'no more moves in database!';
+            }
+            else {
+                results = results.map(info => info['pv'][0])
+                var random = Math.floor(Math.random() * Math.min(results.length, 5));
+                game.move(results[random])
+                updateStatus()
+                setTimeout(function(){ board.position(game.fen()); }, 10);
+            }
+        }
+    };
+    xhttp.open("GET", "/uv/info/" + game.fen(), true);
+    xhttp.send();
+}
+
 function onSnapEnd() {
     board.position(game.fen())
 }
 
 function takeBack() {
     game.undo();
+    game.undo();
     board.position(game.fen());
     updateStatus();
-}
-
-function requestAnalysis() {
-    var xhttp = new XMLHttpRequest();
-    xhttp.open("POST", "/uv/analysis");
-    xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
-    const body = JSON.stringify({
-        pgn: game.pgn(),
-    });
-    xhttp.send(body);
 }
 
 function updateStatus() {
@@ -76,22 +86,6 @@ function updateStatus() {
     };
     xhttp.open("GET", "/uv/info/" + fen, true);
     xhttp.send();
-
-    // antrian analisa
-    var xhttp_q = new XMLHttpRequest();
-    xhttp_q.onreadystatechange = function () {
-        if (this.readyState == 4 && this.status == 200) {
-            var results = JSON.parse(xhttp_q.responseText);
-            var _html = "";
-            for (var fen of results['analysis_queue']) {
-                _html += "<li>" + fen;
-            }
-            document.getElementById("queue").innerHTML = _html;
-        }
-    };
-    xhttp_q.open("GET", "/uv/stats", true);
-    xhttp_q.send();
-
 }
 
 var config = {
@@ -108,7 +102,4 @@ game = new Chess(initial_fen);
 
 updateStatus();
 
-document.getElementById("flip").addEventListener('click', () => { board.flip() });
 document.getElementById("undo").addEventListener('click', () => { takeBack() });
-document.getElementById("analyze").addEventListener('click', () => { requestAnalysis() });
-document.getElementById("refresh").addEventListener('click', () => { updateStatus() });

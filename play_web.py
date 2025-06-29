@@ -67,9 +67,19 @@ def favicon():
     )
 
 
+@app.get("/train", defaults={"initial_fen": STARTING_FEN})
+@app.get("/train/<path:initial_fen>")
+def train(initial_fen: str):
+    try:
+        Board(initial_fen)
+    except ValueError:
+        initial_fen = STARTING_FEN
+    return render_template("train.html", initial_fen=initial_fen)
+
+
 @app.get("/", defaults={"initial_fen": STARTING_FEN})
 @app.get("/<path:initial_fen>")
-def index(initial_fen: str):
+def explore(initial_fen: str):
     try:
         Board(initial_fen)
     except ValueError:

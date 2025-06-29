@@ -3,20 +3,13 @@
 }
 
 body {
-    margin: 0;
+    margin: auto;
     font-family: monospace;
+    max-width:fit-content
 }
 
-header{
+h1{
     text-align: center;
-}
-
-ol {
-    margin-top: 0;
-}
-
-button {
-    margin: 4px 0;
 }
 
 .row {
@@ -27,18 +20,10 @@ button {
 }
 
 .column {
-    flex: 50%;
-    max-width:fit-content;
+    /* flex: 50%; */
     padding: 0 4px;
 }
 
-.ib {
-    display: inline-block;
-}
-/* Responsive layout - makes a two column-layout instead of four columns */
-@media (max-width: 800px) {
-    .column {
-        flex: 50%;
-        max-width: 50%;
-    }
+button {
+    margin: 4px 0;
 }
