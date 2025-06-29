@@ -1,9 +1,7 @@
 import { Chess } from './libs/chess.js';
 
 var board = null
-var game = new Chess()
-var $fen = $('#fen')
-var $pgn = $('#pgn')
+var game = null
 
 function onDragStart(source, piece, position, orientation) {
     // do not pick up pieces if the game is over
@@ -50,7 +48,7 @@ function requestAnalysis() {
     xhttp.open("POST", "/uv/analysis");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
     const body = JSON.stringify({
-        pgn: game.pgn().split(']').pop().replace('\n', ' ').replace('*', ''),
+        pgn: game.pgn(),
     });
     xhttp.send(body);
 }
@@ -58,8 +56,8 @@ function requestAnalysis() {
 function updateStatus() {
     var fen = game.fen();
 
-    $fen.html(fen)
-    $pgn.html(game.pgn().split(']').pop())
+    document.getElementById('fen').innerHTML = fen;
+    document.getElementById('pgn').innerHTML = game.pgn().split(']').pop();
 
     // info multipv
     var xhttp = new XMLHttpRequest();
@@ -97,16 +95,20 @@ function updateStatus() {
 }
 
 var config = {
-    pieceTheme: 'static/img/chesspieces/wikipedia/{piece}.png',
+    pieceTheme: '/static/img/chesspieces/wikipedia/{piece}.png',
     draggable: true,
-    position: 'start',
+    position: initial_fen,
     onDragStart: onDragStart,
     onDrop: onDrop,
     onSnapEnd: onSnapEnd
 };
+
 board = Chessboard('myBoard', config);
+game = new Chess(initial_fen);
+
 updateStatus();
 
+document.getElementById("flip").addEventListener('click', () => { board.flip() });
 document.getElementById("undo").addEventListener('click', () => { takeBack() });
 document.getElementById("analyze").addEventListener('click', () => { requestAnalysis() });
 document.getElementById("refresh").addEventListener('click', () => { updateStatus() });

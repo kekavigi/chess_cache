@@ -2,7 +2,6 @@
 
 Ada beberapa hal yang ingin saya kembangkan:
 * versi web dari *play_cli.py*
-	* Undo dan reset
 	* Popup on hover
 	* Train with computer
 * Buat metode penyinggahan?

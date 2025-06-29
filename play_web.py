@@ -11,7 +11,7 @@ from chess import Board
 from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
 
-from chess_cache.core import AnalysisEngine
+from chess_cache.core import AnalysisEngine, STARTING_FEN
 from chess_cache.env import load_config
 
 CONFIG = load_config("config.shared.toml")
@@ -34,7 +34,6 @@ class AnalysisQueue:
             if len(self.q):
                 fen = self.q.popleft()
                 self.size -= 1
-                print(fen)
                 engine.start(fen, depth=35, config=CONFIG["engine"]["config"])
                 self.engine.wait()
             else:
@@ -68,19 +67,14 @@ def favicon():
     )
 
 
-@app.get("/")
-def index():
-    return render_template("explore.html")
-
-
-@app.get("/info/<path:fen>")
-def get_info(fen):
+@app.get("/", defaults={"initial_fen": STARTING_FEN})
+@app.get("/<path:initial_fen>")
+def index(initial_fen: str):
     try:
-        board = Board(fen)  # TODO: optimalkan cara cek keabsahan FEN
+        Board(initial_fen)
     except ValueError:
-        return {"status": "Invalid FEN", "info": fen}, 400
-    else:
-        return engine.info(fen, max_depth=10)
+        initial_fen = STARTING_FEN
+    return render_template("explore.html", initial_fen=initial_fen)
 
 
 @app.get("/uv/stats")
@@ -117,14 +111,10 @@ def uv_process_analysis():
         return {"status": "Too many requests"}, 429
 
     try:
-        board = Board()  # assume standard game position
+        # TODO: raise exception on non-standard game
         game = read_pgn(StringIO(data["pgn"]))
-
-        move_stack = list(game.mainline_moves())
-        if len(move_stack) > 20:
-            return {"status": "Request denied.", "info": "fullmove is deemed to deep by administrator"}, 403
-                    
-        for move in move_stack:
+        board = game.board()
+        for move in game.mainline_moves():
             board.push(move)
 
     except Exception:

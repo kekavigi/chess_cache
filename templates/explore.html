@@ -16,6 +16,7 @@
     <div class="row">
         <div class="column">
             <div id="myBoard" style="width: 400px"></div>
+            <button id="flip">flip</button>
             <button id="undo">undo</button>
             <button id="analyze">analyze</button>
             <button id="refresh">refresh</button>
@@ -56,6 +57,9 @@
         </details>
     </div><br>
 
+    <script>
+        var initial_fen = '{{initial_fen}}';
+    </script>
     <script type='module' src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 
