@@ -5,16 +5,20 @@ Mengubah dump analisa Lichess menjadi database SQLite
 import logging
 import os
 from itertools import batched
-from orjson import loads
+from json import loads
 from multiprocessing import Pool
 
 from tqdm import tqdm
 
 from chess_cache.core import MATE_SCORE, Database, Info
+from chess_cache.env import Env
 
-CPU_COUNT = 4  # banyak multiprocess
-BATCH_SIZE = 2500
-DUMP_DIR = "./dump"
+env = Env('.env')
+
+CPU_COUNT = env.get('IMPORTER_THREAD', 1)
+BATCH_SIZE = env.get('IMPORTER_BATCH', 1)
+DUMP_DIR = env.get('LICHESS_DUMP_DIR', 'dump')
+
 IMPORT_STT = """
     INSERT INTO master.board AS mas
             (fen, depth, score, move)
@@ -28,7 +32,6 @@ IMPORT_STT = """
             move  = excluded.move
         WHERE excluded.depth > mas.depth
 """
-
 
 def process(filename: str) -> list[Info]:
     db = Database(":memory:")

@@ -12,16 +12,20 @@ from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
 
 from chess_cache.core import AnalysisEngine, STARTING_FEN
-from chess_cache.env import load_config
+from chess_cache.env import Env
 
-CONFIG = load_config("config.shared.toml")
+env = Env('.env')
+FLASK_CONFIG = env.get('FLASK_CONFIG', {})
+ENGINE_PATH = env.get('ENGINE_PATH', 'stockfish')
+DATABASE_URI = env.get('DATABASE_URI', ':memory:')
+ENGINE_CONFIG = env.get('ENGINE_CONFIG', {})
+ANALYSIS_DEPTH = env.get('ANALYSIS_DEPTH', 35)
 
 
 class AnalysisQueue:
-    def __init__(self, qsize: int, engine: AnalysisEngine, max_depth: int):
+    def __init__(self, qsize: int, engine: AnalysisEngine):
         self.q = deque(maxlen=qsize)
         self.engine = engine
-        self.depth = max_depth
         self.size = 0
         self.maxsize = qsize
 
@@ -34,7 +38,7 @@ class AnalysisQueue:
             if len(self.q):
                 fen = self.q.popleft()
                 self.size -= 1
-                engine.start(fen, depth=35, config=CONFIG["engine"]["config"])
+                engine.start(fen, ANALYSIS_DEPTH, config=ENGINE_CONFIG)
                 self.engine.wait()
             else:
                 sleep(1)
@@ -50,9 +54,9 @@ class AnalysisQueue:
 
 
 app = Flask(__name__)
-engine = AnalysisEngine(**CONFIG["engine"])
+engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG)
 
-q_analysis = AnalysisQueue(qsize=64, engine=engine, max_depth=35)
+q_analysis = AnalysisQueue(qsize=64, engine=engine)
 atexit.register(q_analysis.shutdown)
 
 atexit.register(engine.shutdown)
@@ -140,4 +144,4 @@ def uv_process_analysis():
 
 
 if __name__ == "__main__":
-    app.run(**CONFIG["play_web"].get("flask", {}))
+    app.run(**FLASK_CONFIG)
