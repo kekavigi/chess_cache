@@ -13,11 +13,14 @@ from tqdm import tqdm
 from chess_cache.core import MATE_SCORE, Database, Info
 from chess_cache.env import Env
 
-env = Env('.env')
+env = Env(".env")
 
-CPU_COUNT = env.get('IMPORTER_THREAD', 1)
-BATCH_SIZE = env.get('IMPORTER_BATCH', 1)
-DUMP_DIR = env.get('LICHESS_DUMP_DIR', 'dump')
+CPU_COUNT = env.get("IMPORTER_THREAD", 1)
+BATCH_SIZE = env.get("IMPORTER_BATCH", 1)
+DUMP_DIR = env.get("LICHESS_DUMP_DIR", "dump")
+MAXIMUM_DEPTH = env.get("ANALYSIS_DEPTH", 35)
+if MAXIMUM_DEPTH < 35:  # hardcoded agar tidak teledor
+    MAXIMUM_DEPTH = 35
 
 IMPORT_STT = """
     INSERT INTO master.board AS mas
@@ -32,6 +35,7 @@ IMPORT_STT = """
             move  = excluded.move
         WHERE excluded.depth > mas.depth
 """
+
 
 def process(filename: str) -> list[Info]:
     db = Database(":memory:")
@@ -102,6 +106,12 @@ if __name__ == "__main__":
             iter_ = pool.imap_unordered(process, filenames[::-1])
             for data in tqdm(iter_, total=BATCH_SIZE, ncols=0):
                 db.from_json(data)
+
+        # anggap sebagian besar data Lichess usang, sehingga kita
+        # perlu menormalisasi analisa dengan depth > MAXIMUM_DEPTH
+        # menjadi MAXIMUM_DEPTH - 2 (sehingga mudah untuk diupdate
+        # oleh mesin catur)
+        db.normalize_old_data(cutoff_score=MAXIMUM_DEPTH, new_score=MAXIMUM_DEPTH - 2)
 
         # UPSERT isi database :memory: dengan berkas database
         logger.info("upserting")

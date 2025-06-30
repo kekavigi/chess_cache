@@ -11,15 +11,15 @@ from chess import Board
 from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
 
-from chess_cache.core import AnalysisEngine, STARTING_FEN
+from chess_cache.core import STARTING_FEN, AnalysisEngine
 from chess_cache.env import Env
 
-env = Env('.env')
-FLASK_CONFIG = env.get('FLASK_CONFIG', {})
-ENGINE_PATH = env.get('ENGINE_PATH', 'stockfish')
-DATABASE_URI = env.get('DATABASE_URI', ':memory:')
-ENGINE_CONFIG = env.get('ENGINE_CONFIG', {})
-ANALYSIS_DEPTH = env.get('ANALYSIS_DEPTH', 35)
+env = Env(".env")
+FLASK_CONFIG = env.get("FLASK_CONFIG", {})
+ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
+DATABASE_URI = env.get("DATABASE_URI", ":memory:")
+ENGINE_CONFIG = env.get("ENGINE_CONFIG", {})
+ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
 
 
 class AnalysisQueue:

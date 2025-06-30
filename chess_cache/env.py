@@ -1,13 +1,14 @@
-from configparser import ConfigParser, UNNAMED_SECTION
 import ast
 import os
+from configparser import UNNAMED_SECTION, ConfigParser
 
-class Env():
-    def __init__(self, filename='.env'):
+
+class Env:
+    def __init__(self, filename=".env"):
         cp = ConfigParser(allow_unnamed_section=True)
         cp.read(filename)
-        self.cp = cp[UNNAMED_SECTION]    
-    
+        self.cp = cp[UNNAMED_SECTION]
+
     def get(self, varname: str, default=None):
         val = os.environ.get(varname)
         if val is None:

@@ -5,7 +5,10 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache.core import STARTING_FEN, Database
+from chess_cache.core import STARTING_FEN, AnalysisEngine, Database
+from chess_cache.env import Env
+
+env = Env()
 
 
 @pytest.fixture
@@ -104,6 +107,30 @@ def test_reset_db(db_file, db_memory_full):
     db_memory_full.reset_db()
     cur = db_memory_full.sql.execute("SELECT COUNT(*) AS total FROM board")
     assert cur.fetchone()["total"] == 0
+
+
+def test_normalize_old_data():
+    try:
+        ae = AnalysisEngine(
+            binary_path=env.get("ENGINE_PATH"), database_path=":memory:"
+        )
+
+        DEPTH = 20
+        ae.start(STARTING_FEN, depth=DEPTH)
+        ae.wait()
+
+        results = ae.db.sql.execute("SELECT depth FROM board").fetchall()
+        results = set(_["depth"] for _ in results)
+        assert results == set(range(1, DEPTH + 1))
+
+        ae.db.normalize_old_data(cutoff_score=15, new_score=13)
+
+        results = ae.db.sql.execute("SELECT depth FROM board").fetchall()
+        results = set(_["depth"] for _ in results)
+        assert results == set(range(1, 15 + 1))
+
+    finally:
+        ae.shutdown()
 
 
 # TODO: simultaneous upsert from different thread

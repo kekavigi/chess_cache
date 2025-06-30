@@ -434,7 +434,7 @@ class Database:
         # sort
         results[1:] = sorted(
             results[1:],
-            key=lambda d: (d["depth"], d["score"]),
+            key=lambda d: (d["score"], d["depth"]),
             reverse=True,
         )
         for _, info in enumerate(results, start=1):
@@ -540,6 +540,8 @@ class Database:
                 conn.execute(stt, row)
 
     def reset_db(self) -> None:
+        "Hapus seisi tabel board"
+
         if not self._is_memory:
             # too dangerous
             raise RuntimeError
@@ -547,6 +549,25 @@ class Database:
         with self.sql as conn:
             conn.execute("DELETE FROM board")
             conn.execute("VACUUM")
+
+    def normalize_old_data(self, cutoff_score: int, new_score: int) -> None:
+        """
+        Mengubah depth semua analisa yang bernilai lebih dari cutoff_score
+        menjadi new_score.
+
+        Disarankan hanya digunakan setelah mengimpor dataset yang dianalisa oleh
+        beberapa versi mesin yang dianggap lawas, atau setelah memperbarui versi
+        mesin catur. Proses ini memungkinkan untuk memperbarui analisa yang
+        'usang' tetapi sulit untuk diperbarui karena nilai depth yang besar.
+        """
+
+        if cutoff_score < 10 or new_score < 10 or new_score > cutoff_score:
+            # sanity check
+            raise ValueError
+
+        stt = "UPDATE board SET depth = :new_score WHERE depth > :cutoff_score"
+        with self.sql as conn:
+            conn.execute(stt, {"new_score": new_score, "cutoff_score": cutoff_score})
 
 
 class AnalysisEngine:
