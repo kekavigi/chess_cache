@@ -67,9 +67,9 @@ function updateStatus() {
             var _html = "";
             for (var info of results) {
                 _html += "<li>";
-                _html += "<b>" + info.depth + "</b> ";
-                _html += "" + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + " ";
-                _html += "<em>" + info.pv.map(item => `<span>${item}</span>`).join(' ') + "</em></li>";
+                _html += "<b title='depth'>" + info.depth + "</b> ";
+                _html += "<span title='score'>" + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + "</span> ";
+                _html += "<em title='pv'>" + info.pv.map(item => `<span>${item}</span>`).join(' ') + "</em></li>";
             }
             document.getElementById("info").innerHTML = _html;
         }

@@ -434,7 +434,7 @@ class Database:
         # sort
         results[1:] = sorted(
             results[1:],
-            key=lambda d: (d["score"], d["depth"]),
+            key=lambda d: (d["depth"], d["score"]),
             reverse=True,
         )
         for _, info in enumerate(results, start=1):
