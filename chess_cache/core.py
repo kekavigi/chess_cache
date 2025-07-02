@@ -8,7 +8,6 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 
 # Spesifikasi protokol UCI: https://wbec-ridderkerk.nl/html/UCIProtocol.html
 
-import logging
 import sqlite3
 from base64 import b85decode, b85encode
 from functools import lru_cache
@@ -23,7 +22,7 @@ from typing import Any
 
 from chess import Board, IllegalMoveError
 
-from .logger import JSONFormatter
+from .logger import get_logger
 
 # from line_profiler import profile
 
@@ -39,17 +38,8 @@ from .logger import JSONFormatter
 # import sys
 # sys.unraisablehook = lambda unraisable: None
 
-_handle_db = logging.FileHandler("logs/database.jsonl")
-_handle_db.setFormatter(JSONFormatter())
-logger_db = logging.Logger("database")
-logger_db.addHandler(_handle_db)
-
-_handle_engine = logging.FileHandler("logs/engine.jsonl")
-_handle_engine.setFormatter(JSONFormatter())
-logger_engine = logging.Logger("engine")
-logger_engine.addHandler(_handle_engine)
-logger_engine.setLevel(logging.WARNING)
-
+logger_db = get_logger("database")
+logger_engine = get_logger("engine")
 
 Info = dict[str, Any]
 Config = dict[str, str | int]
@@ -360,8 +350,10 @@ class Database:
 
     def close(self) -> None:
         "Menutup koneksi ke database."
-        # self.sql.execute('VACUUM')
+        logger_db.info("Menjalankan ANALYZE sebelum menutup database")
+        self.sql.execute("ANALYZE")
         self.sql.close()
+        logger_db.info("Database ditutup")
 
     def _get_moves(self, board: Board, depth: int) -> list[str]:
         stt = "SELECT move FROM board WHERE fen=?"
@@ -516,11 +508,13 @@ class Database:
                 info_["depth"] -= 1  # kurangi depth
 
     def to_json(self) -> list[Info]:
+        logger_db.info("Mengekspor data menjadi JSON")
         cur = self.sql.execute("SELECT * FROM board")
         results = []
         for row in cur.fetchall():
             row["fen"] = b85encode(row["fen"]).decode("utf-8")
             results.append(row)
+        logger_db.info("Ekspor selesai")
         return results
 
     def from_json(self, json: list[Info]) -> None:
@@ -534,10 +528,12 @@ class Database:
             WHERE excluded.depth > depth
         """
         with self.sql as conn:
+            logger_db.info("Menambah data dari JSON")
             for row_ in json:
                 row = row_.copy()
                 row["fen"] = b85decode(row["fen"])
                 conn.execute(stt, row)
+            logger_db.info("Tambah selesai")
 
     def reset_db(self) -> None:
         "Hapus seisi tabel board"
@@ -547,8 +543,10 @@ class Database:
             raise RuntimeError
 
         with self.sql as conn:
+            logger_db.info("Menghapus konten board")
             conn.execute("DELETE FROM board")
             conn.execute("VACUUM")
+            logger_db.info("Hapus selesai")
 
     def normalize_old_data(self, cutoff_score: int, new_score: int) -> None:
         """
@@ -567,7 +565,9 @@ class Database:
 
         stt = "UPDATE board SET depth = :new_score WHERE depth > :cutoff_score"
         with self.sql as conn:
+            logger_db.info("Menormalisasi data lawas")
             conn.execute(stt, {"new_score": new_score, "cutoff_score": cutoff_score})
+            logger_db.info("Normalisasi selesai")
 
 
 class AnalysisEngine:
@@ -610,17 +610,20 @@ class AnalysisEngine:
 
         assert self._engine.stdin is not None
         assert self._engine.stdout is not None
-        # def debug_write(text):
-        #     print(text, end='')
-        #     self._engine.stdin.write(text)
-        # def debug_read():
-        #     text = self._engine.stdout.readline()
-        #     print(text, end='')
-        #     return text
-        # self._std_write = debug_write
-        # self._std_read = debug_read
-        self._std_write = self._engine.stdin.write
-        self._std_read = self._engine.stdout.readline
+
+        def debug_write(text):
+            logger_engine.debug("stdin ke mesin", extra=text)
+            self._engine.stdin.write(text)
+
+        def debug_read():
+            text = self._engine.stdout.readline()
+            logger_engine.debug("stdout dari mesin", extra=text)
+            return text
+
+        self._std_write = debug_write
+        self._std_read = debug_read
+        # self._std_write = self._engine.stdin.write
+        # self._std_read = self._engine.stdout.readline
 
         self._std_write("uci\n")
         self._set_options(configs)
@@ -707,6 +710,7 @@ class AnalysisEngine:
                             continue
 
                         info = _parse_uci_info(text)
+                        logger_engine.debug("Parsed UCI info", extra=info)
                         self.db.upsert(fen, info)
 
                 # untuk thread lain tahu bahwa proses sudah berhenti
@@ -730,5 +734,7 @@ class AnalysisEngine:
 
         # self.stop()
         self.db.close()
+
         if self._engine:
             self._engine.terminate()
+            logger_engine.info("Engine closed")

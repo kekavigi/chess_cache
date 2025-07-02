@@ -2,7 +2,6 @@
 Mengubah dump analisa Lichess menjadi database SQLite
 """
 
-import logging
 import os
 from itertools import batched
 from json import loads
@@ -10,7 +9,9 @@ from multiprocessing import Pool
 
 from tqdm import tqdm
 
+
 from chess_cache.core import MATE_SCORE, Database, Info
+from chess_cache.logger import get_logger
 from chess_cache.env import Env
 
 env = Env(".env")
@@ -87,11 +88,7 @@ if __name__ == "__main__":
     if "fish.exit" in os.listdir():
         os.remove("fish.exit")
 
-    # logging
-    logger = logging.Logger("importer")
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("\x1b[32m%(asctime)s\x1b[0m %(message)s"))
-    logger.addHandler(handler)
+    logger = get_logger("importer")
 
     FILENAMES = [path_to(_) for _ in os.listdir(DUMP_DIR)]
 

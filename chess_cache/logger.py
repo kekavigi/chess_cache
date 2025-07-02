@@ -3,8 +3,6 @@ import time
 from json import dumps as json_dump
 from typing import Any, no_type_check
 
-# TODO: turn off logging when testing
-
 
 class JSONFormatter(logging.Formatter):
     "A formatter for the standard logging module that converts a LogRecord into JSON"
@@ -17,16 +15,18 @@ class JSONFormatter(logging.Formatter):
     @no_type_check
     def format(self, record: logging.LogRecord):
         result = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
             + (".%03dZ" % (1000 * (record.created % 1))),
-            "level": record.levelname,
             "logger": record.name,
+            "level": record.levelname,
             "message": record.msg % record.args,
             "processId": record.process,
             "thread": record.threadName,
-            "locationInfo": {"fileName": record.filename, "lineNumber": record.lineno},
-            "extra": record.__dict__.get("extra", None),
+            "location": f"{record.filename}:{record.lineno}",
         }
+
+        if "extra" in record.__dict__:
+            result["extra"] = record.__dict__["extra"]
 
         if self.tags:
             result["tags"] = self.tags
@@ -56,3 +56,40 @@ class JSONFormatter(logging.Formatter):
             return obj.__dict__
         else:
             return repr(obj)
+
+
+class CustomLogger(logging.Logger):
+    def makeRecord(
+        self,
+        name,
+        level,
+        fn,
+        lno,
+        msg,
+        args,
+        exc_info,
+        func=None,
+        extra=None,
+        sinfo=None,
+    ):
+        rv = logging.LogRecord(name, level, fn, lno, msg, args, exc_info, func, sinfo)
+        if extra is not None:
+            for key in extra:
+                if (key in ["message", "asctime"]) or (key in rv.__dict__):
+                    raise KeyError("Attempt to overwrite %r in LogRecord" % key)
+            rv.__dict__["extra"] = extra
+        return rv
+
+
+logging.setLoggerClass(CustomLogger)
+
+
+def get_logger(name: str) -> logging.Logger:
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    sh = logging.StreamHandler()
+    sh.setFormatter(JSONFormatter())
+    logger.addHandler(sh)
+
+    return logger
