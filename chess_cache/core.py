@@ -351,7 +351,7 @@ class Database:
     def close(self) -> None:
         "Menutup koneksi ke database."
         logger_db.info("Menjalankan ANALYZE sebelum menutup database")
-        # self.sql.execute("ANALYZE")
+        self.sql.execute("ANALYZE")
         self.sql.close()
         logger_db.info("Database ditutup")
 

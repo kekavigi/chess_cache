@@ -6,6 +6,7 @@ from threading import Thread
 
 from chess import Board
 
+from logging import ERROR
 from chess_cache.core import (
     STARTING_FEN,
     Database,
@@ -13,7 +14,11 @@ from chess_cache.core import (
     _parse_uci_info,
     _unparse_uci_info,
     logger_engine,
+    logger_db,
 )
+
+logger_db.setLevel(ERROR)
+logger_engine.setLevel(ERROR)
 
 
 class UciEngine:
@@ -71,12 +76,16 @@ class UciEngine:
         try:
             logger_engine.info("Interaction started")
             self.parse_input()
-        except:
+        except Exception:
+            logger_engine.exception("Something went wrong.")
             self._quit = True
         finally:
-            self.engine.terminate()
-            logger_engine.info("Interaction closed")
+            logger_engine.info("Menghentikan UciEngine")
+
             self.db.close()
+
+            self.engine.terminate()
+            self._quit = True
             thread.join()
             logger_engine.info("Engine closed")
 
@@ -87,8 +96,12 @@ class UciEngine:
         std_write = self.engine.stdin.write
 
         while True:
-            command = input().strip()
-            logger_engine.info("", extra={"stdin": command})
+            try:
+                command = input().strip()
+            except KeyboardInterrupt:
+                break
+            if not command:
+                continue
 
             if command == "quit":
                 self._quit = True
@@ -143,7 +156,6 @@ class UciEngine:
                 text = std_read().strip()
                 if text == "":
                     continue
-                logger_engine.info("stdout: %s", text)
 
                 cached: Info | None
 

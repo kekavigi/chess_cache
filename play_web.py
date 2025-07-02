@@ -13,6 +13,7 @@ from flask import Flask, g, render_template, request, send_from_directory
 
 from chess_cache.core import STARTING_FEN, AnalysisEngine
 from chess_cache.env import Env
+from chess_cache.logger import get_logger
 
 env = Env(".env")
 FLASK_CONFIG = env.get("FLASK_CONFIG", {})
@@ -21,6 +22,7 @@ DATABASE_URI = env.get("DATABASE_URI", ":memory:")
 ENGINE_CONFIG = env.get("ENGINE_CONFIG", {})
 ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
 
+logger_flask = get_logger('flask')
 
 class AnalysisQueue:
     def __init__(self, qsize: int, engine: AnalysisEngine):
@@ -36,10 +38,12 @@ class AnalysisQueue:
     def process(self):
         while not self._quit:
             if len(self.q):
-                fen = self.q.popleft()
-                self.size -= 1
-                engine.start(fen, ANALYSIS_DEPTH, config=ENGINE_CONFIG)
+                logger_flask.info('Mulai analisis', extra=self.q[0])
+                engine.start(self.q[0], ANALYSIS_DEPTH, config=ENGINE_CONFIG)
                 self.engine.wait()
+
+                self.q.popleft()
+                self.size -= 1
             else:
                 sleep(1)
 
