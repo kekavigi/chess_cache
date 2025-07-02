@@ -1,60 +1,61 @@
 import { Chess } from './libs/chess.js';
+import { Chessboard, INPUT_EVENT_TYPE } from "./cb/Chessboard.js"
+import { PromotionDialog } from "./cb/extensions/promotion-dialog/PromotionDialog.js"
+import { Markers } from "./cb/extensions/markers/Markers.js"
 
-var board = null
-var game = null
+var game = new Chess(initial_fen)
+var board = new Chessboard(document.getElementById("myBoard"), {
+    position: initial_fen,
+    assetsUrl: "/static/cb/assets/",
+    style: { pieces: { file: "pieces/standard.svg" } },
+    extensions: [{ class: PromotionDialog }, { class: Markers }]
+})
+board.enableMoveInput((event) => {
+    console.log(event)
+    if (event.type === INPUT_EVENT_TYPE.validateMoveInput) {
+        var move = { from: event.squareFrom, to: event.squareTo, promotion: 'q' }
+        try { game.move(move) }
+        catch (error) { return false }
 
-function onDragStart(source, piece, position, orientation) {
-    // do not pick up pieces if the game is over
-    if (game.isGameOver()) return false
+        var ispromo = event.squareTo.charAt(1) == '1' || event.squareTo.charAt(1) == 8
+        var ispawn = event.piece.charAt(1) === "p"
+        if (ispromo && ispawn) {
+            game.undo()
+            promotePawn(event, game.turn(), move);
+        }
 
-    // only pick up pieces for the side to move
-    if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
-        (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
-        return false
+    } else if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
+        updateStatus();
+        console.log('updated!')
     }
-}
+    return true
+})
 
-function onDrop(source, target) {
-    // see if the move is legal
-    var promotion = 'q';
-    try {
-        game.move({ from: source, to: target, promotion: promotion })
-    } catch (error) {
-        return 'snapback'
-    }
-    game.undo()
+function promotePawn(event, turn, move) {
+    board.showPromotionDialog(event.squareTo, turn, (result) => {
+        if (result && result.piece) {
+            move.promotion = result.piece.charAt(1)
+            game.move(move)
 
-    var qualified = (target[1] === '1' || target[1] === '8') && game.get(source).type === 'p';
-    if (qualified) promotion = prompt('promote to?', 'q');
-    game.move({ from: source, to: target, promotion: promotion })
+            board.setPiece(result.square, result.piece, true).then( () => {updateStatus()} )
 
-    updateStatus()
-}
-
-// update the board position after the piece snap
-// for castling, en passant, pawn promotion
-function onSnapEnd() {
-    board.position(game.fen())
-}
-
-function takeBack() {
-    game.undo();
-    board.position(game.fen());
-    updateStatus();
+        } else {
+            promotePawn(event, turn, move);
+        }
+    });
 }
 
 function requestAnalysis() {
     var xhttp = new XMLHttpRequest();
     xhttp.open("POST", "/uv/analysis");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
-    const body = JSON.stringify({
-        pgn: game.pgn(),
-    });
+    const body = JSON.stringify({ pgn: game.pgn(), });
     xhttp.send(body);
 }
 
 function updateStatus() {
     var fen = game.fen();
+    console.log(fen)
 
     document.getElementById('fen').innerHTML = fen;
     document.getElementById('pgn').innerHTML = game.pgn().split(']').pop();
@@ -94,21 +95,15 @@ function updateStatus() {
 
 }
 
-var config = {
-    pieceTheme: '/static/img/chesspieces/wikipedia/{piece}.png',
-    draggable: true,
-    position: initial_fen,
-    onDragStart: onDragStart,
-    onDrop: onDrop,
-    onSnapEnd: onSnapEnd
-};
-
-board = Chessboard('myBoard', config);
-game = new Chess(initial_fen);
-
 updateStatus();
 
-document.getElementById("flip").addEventListener('click', () => { board.flip() });
-document.getElementById("undo").addEventListener('click', () => { takeBack() });
+document.getElementById("flip").addEventListener('click', () => {
+    board.setOrientation(board.getOrientation() === 'w' ? 'b' : 'w')
+});
+document.getElementById("undo").addEventListener('click', () => { 
+    game.undo();
+    board.setPosition(game.fen());
+    updateStatus();
+});
 document.getElementById("analyze").addEventListener('click', () => { requestAnalysis() });
 document.getElementById("refresh").addEventListener('click', () => { updateStatus() });
