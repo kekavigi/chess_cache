@@ -351,7 +351,7 @@ class Database:
     def close(self) -> None:
         "Menutup koneksi ke database."
         logger_db.info("Menjalankan ANALYZE sebelum menutup database")
-        self.sql.execute("ANALYZE")
+        # self.sql.execute("ANALYZE")
         self.sql.close()
         logger_db.info("Database ditutup")
 
@@ -710,7 +710,6 @@ class AnalysisEngine:
                             continue
 
                         info = _parse_uci_info(text)
-                        logger_engine.debug("Parsed UCI info", extra=info)
                         self.db.upsert(fen, info)
 
                 # untuk thread lain tahu bahwa proses sudah berhenti

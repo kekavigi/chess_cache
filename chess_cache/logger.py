@@ -20,7 +20,7 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "level": record.levelname,
             "message": record.msg % record.args,
-            "processId": record.process,
+            "pid": record.process,
             "thread": record.threadName,
             "location": f"{record.filename}:{record.lineno}",
         }
