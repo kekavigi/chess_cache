@@ -343,6 +343,9 @@ class Database:
             for stt in script.split(";"):
                 conn.execute(stt)
 
+        logger_db.info("Mengoptimasi database")
+        self.sql.execute("PRAGMA optimize=0x10002")
+
         cur = self.sql.execute(
             'SELECT file FROM pragma_database_list WHERE name="main"'
         )
@@ -350,8 +353,9 @@ class Database:
 
     def close(self) -> None:
         "Menutup koneksi ke database."
-        logger_db.info("Menjalankan ANALYZE sebelum menutup database")
-        self.sql.execute("ANALYZE")
+        logger_db.info("Mengoptimasi database sebelum menutupnya")
+        self.sql.execute("PRAGMA optimize")
+
         self.sql.close()
         logger_db.info("Database ditutup")
 
@@ -693,7 +697,9 @@ class AnalysisEngine:
                     else:
                         self._std_write("go infinite\n")
 
-                    logger_engine.debug("analysis started", extra={'fen':fen, 'depth': depth})
+                    logger_engine.debug(
+                        "analysis started", extra={"fen": fen, "depth": depth}
+                    )
 
                     # proses output dari engine
                     while True:

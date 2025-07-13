@@ -13,6 +13,7 @@ from flask import Flask, g, render_template, request, send_from_directory
 
 from chess_cache.core import STARTING_FEN, AnalysisEngine
 from chess_cache.env import Env
+from chess_cache.importer import pgn_to_fens
 from chess_cache.logger import get_logger
 
 env = Env(".env")
@@ -22,11 +23,18 @@ DATABASE_URI = env.get("DATABASE_URI", ":memory:")
 ENGINE_CONFIG = env.get("ENGINE_CONFIG", {})
 ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
 
-logger_flask = get_logger('flask')
+IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 50)
+IMPORTER_ENGINE_CONFIG = env.get("IMPORTER_ENGINE_CONFIG", {"Thread": 4, "Hash": 1024})
+
+
+logger_flask = get_logger("flask")
+
 
 class AnalysisQueue:
     def __init__(self, qsize: int, engine: AnalysisEngine):
-        self.q = deque(maxlen=qsize)
+        self.q_main = deque(maxlen=qsize)
+        self.q_misc = deque()
+
         self.engine = engine
         self.size = 0
         self.maxsize = qsize
@@ -37,23 +45,42 @@ class AnalysisQueue:
 
     def process(self):
         while not self._quit:
-            if len(self.q):
-                logger_flask.info('Mulai analisis', extra=self.q[0])
-                engine.start(self.q[0], ANALYSIS_DEPTH, config=ENGINE_CONFIG)
+            if len(self.q_main):
+                epd = self.q_main.popleft()
+                logger_flask.info(
+                    "Mulai analisa", extra={"where": "q_main", "fen": epd}
+                )
+                engine.start(epd, ANALYSIS_DEPTH, config=ENGINE_CONFIG)
                 self.engine.wait()
 
-                self.q.popleft()
                 self.size -= 1
+
+            elif len(self.q_misc):
+                epd = self.q_misc.popleft()
+
+                analysis = engine.info(epd, only_best=True, max_depth=0)
+                if analysis and analysis[0]["depth"] < ANALYSIS_DEPTH:
+                    logger_flask.info(
+                        "Mulai analisa",
+                        extra={
+                            "where": "q_misc",
+                            "fen": epd,
+                            "remaining": len(self.q_misc),
+                        },
+                    )
+                    engine.start(epd, ANALYSIS_DEPTH, config=IMPORTER_ENGINE_CONFIG)
+                    self.engine.wait()
+
             else:
                 sleep(1)
 
     def shutdown(self):
         self._quit = True
-        self.thread.join()
+        self.thread.join(timeout=3)
 
     def add(self, fen: str):
-        if fen not in self.q:
-            self.q.append(fen)
+        if fen not in self.q_main:
+            self.q_main.append(fen)
             self.size += 1
 
 
@@ -61,8 +88,12 @@ app = Flask(__name__)
 engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG)
 
 q_analysis = AnalysisQueue(qsize=64, engine=engine)
-atexit.register(q_analysis.shutdown)
 
+# TODO: buat halaman untuk upload berkas pgn
+pgn_file = "lichess_kekavigi_2025-07-11.pgn"
+q_analysis.q_misc.extend(pgn_to_fens(pgn_file, max_depth=IMPORTER_PGN_DEPTH))
+
+atexit.register(q_analysis.shutdown)
 atexit.register(engine.shutdown)
 
 
@@ -97,7 +128,10 @@ def explore(initial_fen: str):
 
 @app.get("/uv/stats")
 def stats():
-    return {"analysis_queue": list(q_analysis.q)}
+    return {
+        "analysis_queue": list(q_analysis.q_main),
+        "pgn_import_queue": list(q_analysis.q_misc)[:64],
+    }
 
 
 @app.get("/uv/info/<path:fen>")

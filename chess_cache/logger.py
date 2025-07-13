@@ -1,6 +1,6 @@
 import logging
-from time import strftime, gmtime
 from json import dumps as json_dump
+from time import gmtime, strftime
 from typing import Any
 
 
@@ -22,11 +22,13 @@ class JSONFormatter(logging.Formatter):
         }
 
         if record.levelno >= logging.INFO:
-            result.update({
-                "pid": record.process,
-                "thread": record.threadName,
-                "loc": f"{record.filename}:{record.lineno}",
-            })
+            result.update(
+                {
+                    "pid": record.process,
+                    "thread": record.threadName,
+                    "loc": f"{record.filename}:{record.lineno}",
+                }
+            )
 
         if "extra" in record.__dict__:
             result["extra"] = record.__dict__["extra"]
