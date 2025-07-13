@@ -1,7 +1,7 @@
 import logging
-import time
+from time import strftime, gmtime
 from json import dumps as json_dump
-from typing import Any, no_type_check
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
@@ -12,18 +12,21 @@ class JSONFormatter(logging.Formatter):
     def __init__(self, **tags: Any):
         self.tags = tags
 
-    @no_type_check
-    def format(self, record: logging.LogRecord):
+    def format(self, record: logging.LogRecord) -> str:
         result = {
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created))
-            + (".%03dZ" % (1000 * (record.created % 1))),
+            "ts": strftime("%Y-%m-%dT%H:%M:%S", gmtime(record.created))
+            + f".{1000*(record.created % 1):.0f}Z",
             "logger": record.name,
             "level": record.levelname,
-            "message": record.msg % record.args,
-            "pid": record.process,
-            "thread": record.threadName,
-            "location": f"{record.filename}:{record.lineno}",
+            "msg": record.msg % record.args,
         }
+
+        if record.levelno >= logging.INFO:
+            result.update({
+                "pid": record.process,
+                "thread": record.threadName,
+                "loc": f"{record.filename}:{record.lineno}",
+            })
 
         if "extra" in record.__dict__:
             result["extra"] = record.__dict__["extra"]
@@ -32,9 +35,10 @@ class JSONFormatter(logging.Formatter):
             result["tags"] = self.tags
         if record.exc_info:
             exc_type, exc_value, exc_traceback = record.exc_info
-            result["exception"] = exc_type.__name__
+            assert exc_type
+            assert exc_traceback
 
-            result["tb"] = []
+            _result_tb = []
             tb = exc_traceback.tb_next
             while tb:
                 frame = tb.tb_frame
@@ -46,8 +50,11 @@ class JSONFormatter(logging.Formatter):
                         f"{var_name}": value for var_name, value in local_vars.items()
                     },
                 }
-                result["tb"].append(info)
+                _result_tb.append(info)
                 tb = tb.tb_next
+
+            result["exception"] = exc_type.__name__
+            result["tb"] = _result_tb
 
         return json_dump(result, default=self._jsonify)
 
@@ -61,17 +68,17 @@ class JSONFormatter(logging.Formatter):
 class CustomLogger(logging.Logger):
     def makeRecord(
         self,
-        name,
-        level,
-        fn,
-        lno,
-        msg,
-        args,
-        exc_info,
-        func=None,
-        extra=None,
-        sinfo=None,
-    ):
+        name: str,
+        level: int,
+        fn: str,
+        lno: int,
+        msg: Any,
+        args: Any,  # ugh
+        exc_info: Any,  # ugh
+        func: str | None = None,
+        extra: Any = None,
+        sinfo: str | None = None,
+    ) -> logging.LogRecord:
         rv = logging.LogRecord(name, level, fn, lno, msg, args, exc_info, func, sinfo)
         if extra is not None:
             for key in extra:

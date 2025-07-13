@@ -582,7 +582,7 @@ class AnalysisEngine:
         binary_path: str = "./stockfish",
         database_path: str = ":memory:",
         configs: Config = {},
-        **kwargs,
+        **kwargs: Any,
     ):
         """Menginisialisasi mesin catur dan database.
 
@@ -611,19 +611,19 @@ class AnalysisEngine:
         assert self._engine.stdin is not None
         assert self._engine.stdout is not None
 
-        def debug_write(text):
-            logger_engine.debug("stdin ke mesin", extra=text)
-            self._engine.stdin.write(text)
+        def debug_write(text: str) -> None:
+            logger_engine.debug("stdin", extra={"raw": text})
+            self._engine.stdin.write(text)  # type: ignore
 
-        def debug_read():
-            text = self._engine.stdout.readline()
-            logger_engine.debug("stdout dari mesin", extra=text)
+        def debug_read() -> str:
+            text = self._engine.stdout.readline()  # type: ignore
+            logger_engine.debug("stdout", extra={"raw": text})
             return text
 
-        self._std_write = debug_write
-        self._std_read = debug_read
-        # self._std_write = self._engine.stdin.write
-        # self._std_read = self._engine.stdout.readline
+        # self._std_write = debug_write
+        # self._std_read = debug_read
+        self._std_write = self._engine.stdin.write
+        self._std_read = self._engine.stdout.readline
 
         self._std_write("uci\n")
         self._set_options(configs)
@@ -693,6 +693,8 @@ class AnalysisEngine:
                     else:
                         self._std_write("go infinite\n")
 
+                    logger_engine.debug("analysis started", extra={'fen':fen, 'depth': depth})
+
                     # proses output dari engine
                     while True:
                         if self._stop:
@@ -709,7 +711,18 @@ class AnalysisEngine:
                         ):
                             continue
 
+                        # logger_engine.debug("stdin", extra={"raw": text})
+
                         info = _parse_uci_info(text)
+                        logger_engine.debug(
+                            "stdin",
+                            extra={
+                                "multipv": info["multipv"],
+                                "depth": info["depth"],
+                                "pv0": info["pv"][0],
+                            },
+                        )
+
                         self.db.upsert(fen, info)
 
                 # untuk thread lain tahu bahwa proses sudah berhenti
