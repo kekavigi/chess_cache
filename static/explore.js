@@ -11,7 +11,6 @@ var board = new Chessboard(document.getElementById("myBoard"), {
     extensions: [{ class: PromotionDialog }, { class: Markers }]
 })
 board.enableMoveInput((event) => {
-    console.log(event)
     if (event.type === INPUT_EVENT_TYPE.validateMoveInput) {
         var move = { from: event.squareFrom, to: event.squareTo, promotion: 'q' }
         try { game.move(move) }
@@ -25,8 +24,7 @@ board.enableMoveInput((event) => {
         }
 
     } else if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
-        updateStatus();
-        console.log('updated!')
+        event.chessboard.setPosition(game.fen(), true).then(updateStatus())
     }
     return true
 })
@@ -36,9 +34,7 @@ function promotePawn(event, turn, move) {
         if (result && result.piece) {
             move.promotion = result.piece.charAt(1)
             game.move(move)
-
-            board.setPiece(result.square, result.piece, true).then( () => {updateStatus()} )
-
+            board.setPiece(result.square, result.piece, true).then(updateStatus())
         } else {
             promotePawn(event, turn, move);
         }
@@ -71,8 +67,6 @@ function formSubmit(event) {
 
 function updateStatus() {
     var fen = game.fen();
-    console.log(fen)
-
     document.getElementById('fen').innerHTML = fen;
     document.getElementById('pgn').innerHTML = game.pgn().split(']').pop();
 
@@ -100,7 +94,7 @@ updateStatus();
 document.getElementById("flip").addEventListener('click', () => {
     board.setOrientation(board.getOrientation() === 'w' ? 'b' : 'w')
 });
-document.getElementById("undo").addEventListener('click', () => { 
+document.getElementById("undo").addEventListener('click', () => {
     game.undo();
     board.setPosition(game.fen());
     updateStatus();
