@@ -9,10 +9,9 @@ from multiprocessing import Pool
 
 from tqdm import tqdm
 
-
 from chess_cache.core import MATE_SCORE, Database, Info
-from chess_cache.logger import get_logger
 from chess_cache.env import Env
+from chess_cache.logger import get_logger
 
 env = Env(".env")
 

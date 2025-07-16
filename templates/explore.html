@@ -25,15 +25,18 @@
             <hr>
             <p>
                 Analisa posisi saat ini:
-                <ol id="info"></ol>
+            <ol id="info"></ol>
             </p>
         </div>
     </div>
     <hr>
     <div class="row">
         <details>
-            <summary>Daftar antrian posisi yang akan dianalisa</summary>
-            <ol id="queue"></ol>
+            <summary>unggah berkas pgn</summary>
+            <form id="upload_pgn" method=post enctype=multipart/form-data>
+                <input type=file name=file>
+                <input type=submit value=unggah>
+            </form>
         </details>
     </div>
     <div class="row">
@@ -54,10 +57,11 @@
             </p>
         </details>
     </div>
-    
+
     <script>
         var initial_fen = '{{initial_fen}}';
     </script>
-    <script type='module' src="{{ url_for('static', filename='script.js') }}"></script>
+    <script type='module' src="{{ url_for('static', filename='explore.js') }}"></script>
 </body>
+
 </html>

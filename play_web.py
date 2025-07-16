@@ -2,7 +2,7 @@
 
 import atexit
 import os
-from collections import deque
+from heapq import heappop, heappush
 from io import StringIO
 from threading import Thread
 from time import sleep
@@ -10,91 +10,82 @@ from time import sleep
 from chess import Board
 from chess.pgn import read_game as read_pgn
 from flask import Flask, g, render_template, request, send_from_directory
+from werkzeug.utils import secure_filename
 
 from chess_cache.core import STARTING_FEN, AnalysisEngine
 from chess_cache.env import Env
-from chess_cache.importer import pgn_to_fens
+from chess_cache.importer import extract_fens
 from chess_cache.logger import get_logger
 
 env = Env(".env")
+logger = get_logger("flask")
+
 FLASK_CONFIG = env.get("FLASK_CONFIG", {})
 ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
 DATABASE_URI = env.get("DATABASE_URI", ":memory:")
-ENGINE_CONFIG = env.get("ENGINE_CONFIG", {})
 ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
 
 IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 50)
-IMPORTER_ENGINE_CONFIG = env.get("IMPORTER_ENGINE_CONFIG", {"Thread": 4, "Hash": 1024})
+ENGINE_CONFIG_MAIN = env.get("ENGINE_CONFIG", {})
+ENGINE_CONFIG_MISC = env.get("IMPORTER_ENGINE_CONFIG", ENGINE_CONFIG_MAIN)
 
 
-logger_flask = get_logger("flask")
+class Queue:
+    def __init__(self):
+        "Memroses semua permintaan analisa posisi catur sesuai prioritasnya"
 
-
-class AnalysisQueue:
-    def __init__(self, qsize: int, engine: AnalysisEngine):
-        self.q_main = deque(maxlen=qsize)
-        self.q_misc = deque()
-
-        self.engine = engine
-        self.size = 0
-        self.maxsize = qsize
-
+        self.engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG_MAIN)
+        self.heap = []
         self._quit = False
-        self.thread = Thread(target=self.process, daemon=True)
-        self.thread.start()
+        self._thread = Thread(target=self._process, daemon=True)
+        self._thread.start()
 
-    def process(self):
+    def put(self, fen: str, priority: int = 0):
+        heappush(self.heap, (-priority, fen))
+
+    def _process(self):
         while not self._quit:
-            if len(self.q_main):
-                epd = self.q_main.popleft()
-                logger_flask.info(
-                    "Mulai analisa", extra={"where": "q_main", "fen": epd}
-                )
-                engine.start(epd, ANALYSIS_DEPTH, config=ENGINE_CONFIG)
-                self.engine.wait()
-
-                self.size -= 1
-
-            elif len(self.q_misc):
-                epd = self.q_misc.popleft()
-
-                analysis = engine.info(epd, only_best=True, max_depth=0)
-                if analysis and analysis[0]["depth"] < ANALYSIS_DEPTH:
-                    logger_flask.info(
-                        "Mulai analisa",
-                        extra={
-                            "where": "q_misc",
-                            "fen": epd,
-                            "remaining": len(self.q_misc),
-                        },
-                    )
-                    engine.start(epd, ANALYSIS_DEPTH, config=IMPORTER_ENGINE_CONFIG)
-                    self.engine.wait()
-
-            else:
+            if not self.heap:
                 sleep(1)
+                continue
+
+            priority, fen = heappop(self.heap)
+            analysis = self.engine.info(fen, only_best=True, max_depth=0)
+            if analysis and analysis[0]["depth"] >= ANALYSIS_DEPTH:
+                continue
+
+            priority = -1 * priority
+            logger.info("Menganalisa", extra={"fen": fen, "priority": priority})
+            self.engine.start(
+                fen,
+                ANALYSIS_DEPTH,
+                ENGINE_CONFIG_MAIN if priority > 0 else ENGINE_CONFIG_MISC,
+            )
+            self.engine.wait()
+
+    def is_full(self, n: int = 10):
+        heap, L = self.heap, len(self.heap)
+
+        def count():
+            # Hitung banyaknya non-background task di heap
+            if i >= L or heap[i] == 0:
+                return 0
+            return 1 + count(2 * i + 1) + count(2 * i + 2)
+
+        return count() >= n
 
     def shutdown(self):
-        self._quit = True
-        self.thread.join(timeout=3)
-
-    def add(self, fen: str):
-        if fen not in self.q_main:
-            self.q_main.append(fen)
-            self.size += 1
+        self.engine.stop()
+        self._thread.join(timeout=3)
+        self.engine.shutdown()
+        logger.info("Nice")
 
 
 app = Flask(__name__)
-engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1000 * 1000
 
-q_analysis = AnalysisQueue(qsize=64, engine=engine)
-
-# TODO: buat halaman untuk upload berkas pgn
-pgn_file = "lichess_kekavigi_2025-07-11.pgn"
-q_analysis.q_misc.extend(pgn_to_fens(pgn_file, max_depth=IMPORTER_PGN_DEPTH))
-
-atexit.register(q_analysis.shutdown)
-atexit.register(engine.shutdown)
+queue = Queue()
+atexit.register(queue.shutdown)
 
 
 @app.route("/favicon.ico")
@@ -106,32 +97,19 @@ def favicon():
     )
 
 
-@app.get("/train", defaults={"initial_fen": STARTING_FEN})
-@app.get("/train/<path:initial_fen>")
-def train(initial_fen: str):
-    try:
-        Board(initial_fen)
-    except ValueError:
-        initial_fen = STARTING_FEN
-    return render_template("train.html", initial_fen=initial_fen)
+@app.get("/train")
+def train():
+    return render_template("train.html", initial_fen=STARTING_FEN)
 
 
-@app.get("/", defaults={"initial_fen": STARTING_FEN})
-@app.get("/<path:initial_fen>")
-def explore(initial_fen: str):
-    try:
-        Board(initial_fen)
-    except ValueError:
-        initial_fen = STARTING_FEN
-    return render_template("explore.html", initial_fen=initial_fen)
+@app.get("/")
+def explore():
+    return render_template("explore.html", initial_fen=STARTING_FEN)
 
 
 @app.get("/uv/stats")
-def stats():
-    return {
-        "analysis_queue": list(q_analysis.q_main),
-        "pgn_import_queue": list(q_analysis.q_misc)[:64],
-    }
+def uv_stats():
+    return {"analysis_queue": len(queue.heap)}
 
 
 @app.get("/uv/info/<path:fen>")
@@ -140,8 +118,9 @@ def uv_get_info(fen):
         board = Board(fen)
     except ValueError:
         return {"status": "Invalid FEN", "info": fen}, 400
-    else:
-        results = engine.info(board.epd(), max_depth=10)
+
+    try:
+        results = queue.engine.info(board.epd(), max_depth=10)
         for info in results:
             board.set_fen(fen)
             movestack = info.pop("pv")
@@ -150,7 +129,36 @@ def uv_get_info(fen):
                 san = board.san(board.parse_uci(uci))
                 info["pv"].append(san)
                 board.push_uci(uci)
-        return results
+    except:
+        logger.exception("Something went wrong")
+        raise
+
+    return results
+
+
+@app.post("/uv/upload_pgn")
+def uv_parse_pgn():
+    if "file" not in request.files:
+        return {"status": "tidak ada file"}, 400
+
+    file: flask.Request.files = request.files["file"]
+    if file.filename == "":
+        # If the user does not select a file, the browser
+        # submits an empty file without a filename.
+        return {"status": "tidak ada file"}, 400
+    try:
+        pgn = file.stream.read().decode("utf-8")
+    except:
+        logger.exception("unable to parse file")
+        return {"status": "unable to parse file"}, 415
+    else:
+        fens = extract_fens(pgn, max_depth=IMPORTER_PGN_DEPTH)
+        for fen in fens:
+            queue.put(fen)
+        return {
+            "status": "OK",
+            "info": f"Berhasil mengekstrak {len(fens)} posisi",
+        }, 200
 
 
 @app.post("/uv/analysis")
@@ -158,27 +166,26 @@ def uv_process_analysis():
     data = request.get_json()
     if "pgn" not in data:
         return {"status": "invalid POST request", "info": "No pgn data"}, 400
-
-    if q_analysis.size == q_analysis.maxsize:
+    if queue.is_full():
         return {"status": "Too many requests"}, 429
-
     try:
         # TODO: raise exception on non-standard game
         game = read_pgn(StringIO(data["pgn"]))
         board = game.board()
         for move in game.mainline_moves():
             board.push(move)
-
     except Exception:
         return {"status": "Invalid PGN", "info": data["pgn"]}, 400
 
-    else:
-        # old_info = engine.info(fen, only_best=True, max_depth=0)
-        # if old_info and old_info[0]["depth"] > 35:
-        #     return {"status": "Request denied.", "info": "cached data depth is deemed good enough."}, 403
+    analysis = engine.info(fen, only_best=True, max_depth=0)
+    if analysis and analysis[0]["depth"] > 35:
+        return {
+            "status": "Request denied.",
+            "info": "cached data depth is deemed good enough.",
+        }, 403
 
-        q_analysis.add(board.epd())
-        return {"status": "OK"}, 200
+    queue.put(board.epd(), priority=100)
+    return {"status": "OK"}, 200
 
 
 if __name__ == "__main__":

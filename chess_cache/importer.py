@@ -1,3 +1,5 @@
+from io import StringIO
+
 from chess import Board
 from chess.pgn import Game, read_game
 
@@ -7,32 +9,29 @@ from .logger import get_logger
 logger = get_logger("importer")
 
 
-def pgn_to_fens(path: str, max_depth: int) -> list[str]:
-    logger.info(f"Membaca PGN '{path}'")
-
+def extract_fens(pgn: str, max_depth: int) -> list[str]:
+    _pgn = StringIO(pgn)
     boards = []
-    with open(path) as f:
-        while True:
-            game = read_game(f)
-            if game is None:
-                break
+    while True:
+        game = read_game(_pgn)
+        if game is None:
+            break
 
-            # hanya sertakan varian standar
-            if game.headers.get("Variant") not in ["Rapid", "Standard"]:
-                continue
-            board = game.board()
-            if game.board().fen() != STARTING_FEN:
-                continue
-            try:
-                # pastikan semua move valid dari sudut
-                # pandang permainan varian standar
-                for move in list(game.mainline_moves()):
-                    board.push(move)
-            except:
-                continue
+        # hanya sertakan varian standar
+        if game.headers.get("Variant") not in ["Rapid", "Standard"]:
+            continue
+        board = game.board()
+        if game.board().fen() != STARTING_FEN:
+            continue
+        try:
+            # pastikan semua move valid dari sudut
+            # pandang permainan varian standar
+            for move in list(game.mainline_moves()):
+                board.push(move)
+        except:
+            continue
 
-            boards.append(board)
-    logger.info(f"Berhasil memuat {len(boards)} permainan varian standar")
+        boards.append(board)
 
     fens, count_fen = {}, 0
     for board in boards:
@@ -47,7 +46,6 @@ def pgn_to_fens(path: str, max_depth: int) -> list[str]:
                 fens[epd] = count_fen
             board.pop()
 
-    logger.info(f"Berhasil mengekstrak {count_fen} posisi")
     return [k for (k, v) in sorted(fens.items(), key=lambda tup: tup[1])]
 
 
@@ -63,7 +61,8 @@ if __name__ == "__main__":
     IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 8)
 
     pgn_file = "lichess_kekavigi_2025-07-11.pgn"
-    fens = pgn_to_fens(pgn_file, max_depth=IMPORTER_PGN_DEPTH)
+    with open(pgn_file) as f:
+        fens = extract_fens(f.read(), max_depth=IMPORTER_PGN_DEPTH)
 
     try:
         engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG)

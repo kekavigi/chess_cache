@@ -53,6 +53,22 @@ function requestAnalysis() {
     xhttp.send(body);
 }
 
+function formSubmit(event) {
+  var url = "/uv/upload_pgn";
+  var request = new XMLHttpRequest();
+  request.open('POST', url, true);
+  request.onload = function() {
+    console.log('nice', request.responseText);
+  };
+  request.onerror = function() {
+    console.log('ohno', request.responseText);
+  };
+
+  // create FormData from form that triggered event
+  request.send(new FormData(event.target));
+  event.preventDefault();
+}
+
 function updateStatus() {
     var fen = game.fen();
     console.log(fen)
@@ -77,22 +93,6 @@ function updateStatus() {
     };
     xhttp.open("GET", "/uv/info/" + fen, true);
     xhttp.send();
-
-    // antrian analisa
-    var xhttp_q = new XMLHttpRequest();
-    xhttp_q.onreadystatechange = function () {
-        if (this.readyState == 4 && this.status == 200) {
-            var results = JSON.parse(xhttp_q.responseText);
-            var _html = "";
-            for (var fen of results['analysis_queue']) {
-                _html += "<li>" + fen;
-            }
-            document.getElementById("queue").innerHTML = _html;
-        }
-    };
-    xhttp_q.open("GET", "/uv/stats", true);
-    xhttp_q.send();
-
 }
 
 updateStatus();
@@ -107,3 +107,4 @@ document.getElementById("undo").addEventListener('click', () => {
 });
 document.getElementById("analyze").addEventListener('click', () => { requestAnalysis() });
 document.getElementById("refresh").addEventListener('click', () => { updateStatus() });
+document.getElementById("upload_pgn").addEventListener("submit", formSubmit);

@@ -664,7 +664,8 @@ class AnalysisEngine:
         """Memulai analisa posisi catur oleh mesin catur.
 
         Config yang disertakan disini akan menimpa config yang ditetapkan
-        di __init__(), jika ada.
+        di __init__(), jika ada. Analisa lainnya yang berjalan, jika ada,
+        akan dihentikan.
 
         Args:
             fen: (Daftar) posisi catur dalam notasi FEN.
