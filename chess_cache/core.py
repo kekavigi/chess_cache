@@ -49,6 +49,7 @@ MATE_SCORE = 2**12
 
 UCI_REGEX = regex_compile(r"^[a-h][1-8][a-h][1-8][pnbrqk]?|[PNBRQK]@[a-h][1-8]|0000\Z")
 CHESS_FILE = {c: [8 * r + f for r in range(8)] for f, c in enumerate("abcdefgh")}
+PIECE_MAP = {e: c for e, c in enumerate("P p N n B b R r Q q K k".split())}
 PIECE_MAP_ENCODE = {
     "P": (1, True),
     "N": (2, True),
@@ -98,14 +99,15 @@ UCI_TO_NUM, NUM_TO_UCI = uci_int_mapping()
 @lru_cache(maxsize=4096)
 # @profile
 def encode_fen(fen: str) -> bytes:
+    "Mengompresi notasi FEN, mengabaikan halfmove dan fullmove"
+
     # Didasarkan oleh kode oleh Tomasz Sobczyk
     # https://github.com/official-stockfiPiecesh/nnue-pytorch/blob/master/lib/nnue_training_data_formats.h#L4615
 
-    # Proses ini sebenarnya reversible, tetapi untuk masalah ini proses decode
-    # tidak dibutuhkan. Kode bisa diringkas dengan membuat fungsi sebagai
-    # atribut dari Board, dan daripada menggunakan self.fen().split(), ambil
-    # informasi dari self.castling_xfen(), self.ep_square(), self.piece_type_at()
-    # dan sebagainya. Cuma masalahnya, cukup fucked up untuk me-LRUCache-nya.
+    # Kode bisa diringkas dengan membuat fungsi sebagai atribut dari Board,
+    # dan daripada menggunakan self.fen().split(), ambil informasi dari
+    # self.castling_xfen(), self.ep_square(), self.piece_type_at() dan
+    # sebagainya. Cuma masalahnya, cukup fucked up untuk me-LRUCache-nya.
 
     splitted = fen.split()
 
@@ -168,6 +170,76 @@ def encode_fen(fen: str) -> bytes:
     # ubah ke BLOB, num terlalu besar untuk SQLite
     bitcount = (bitcount + 7) // 8  # == ceil(log2(num))
     return num.to_bytes(bitcount)
+
+
+def decode_fen(efen: bytes) -> str:
+    "Mendekompresi bytes menjadi notasi FEN, tanpa halfmove dan fullmove"
+
+    fen: list[str] = []
+    fen_rank = ""
+    turn = "w"
+    castle = ["" for _ in range(4)]
+    en_passant = "-"
+    blank_count = 0
+
+    efen = int.from_bytes(efen)
+    nibble = efen >> 64
+    occupancy = (nibble << 64) ^ efen
+
+    for rank in range(8):
+        for file in range(8):
+            if occupancy & 1 == 0:
+                # rangkum banyaknya petak kosong
+                blank_count += 1
+            else:
+                if blank_count:
+                    # dan tambahkan ke FEN
+                    fen_rank += str(blank_count)
+                    blank_count = 0
+
+                # dapatkan jenis bidak saat ini
+                ptype = nibble ^ (nibble >> 4) << 4
+                if ptype < 12:
+                    # bidak 'standar'
+                    fen_rank += PIECE_MAP[ptype]
+                elif ptype == 12:
+                    # pawn with en_passant file
+                    fen_rank += "P" if rank == 4 else "p"
+                    en_passant = "hgfedcba"[file] + ("3" if rank == 4 else "6")
+                elif ptype == 13:
+                    # white rook with castling abilities
+                    fen_rank += "R"
+                    if file == 0:
+                        castle[0] = "K"
+                    else:
+                        castle[1] = "Q"
+                elif ptype == 14:
+                    # black rook with castling abilities
+                    fen_rank += "r"
+                    if file == 0:
+                        castle[2] = "k"
+                    else:
+                        castle[3] = "q"
+                else:
+                    # king is black and black is to move
+                    fen_rank += "k"
+                    turn = "b"
+                nibble = nibble >> 4
+            occupancy = occupancy >> 1
+
+        if blank_count:
+            # jika blank_count tersisa, tambahkan sekarang
+            fen_rank += str(blank_count)
+            blank_count = 0
+
+        # tambahkan rank ke fen
+        fen.extend(reversed(fen_rank))
+        fen.append("/")
+        fen_rank = ""
+
+    fen_final = "".join(fen[:-1])
+    castling = "".join(castle) or "-"
+    return f"{fen_final} {turn} {castling} {en_passant}"
 
 
 def _parse_uci_info(text_info: str) -> Info:
