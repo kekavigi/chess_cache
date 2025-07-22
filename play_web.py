@@ -24,6 +24,7 @@ FLASK_CONFIG = env.get("FLASK_CONFIG", {})
 ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
 DATABASE_URI = env.get("DATABASE_URI", ":memory:")
 ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
+MINIMAL_DEPTH = env.get('MINIMAL_DEPTH', 20)
 
 IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 50)
 ENGINE_CONFIG_MAIN = env.get("ENGINE_CONFIG", {})
@@ -34,7 +35,7 @@ class Queue:
     def __init__(self):
         "Memroses semua permintaan analisa posisi catur sesuai prioritasnya"
 
-        self.engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG_MAIN)
+        self.engine = AnalysisEngine(ENGINE_PATH, DATABASE_URI, ENGINE_CONFIG_MAIN, database_configs={'minimal_depth':MINIMAL_DEPTH})
         self.heap = []
         self._quit = False
         self._thread = Thread(target=self._process, daemon=True)
@@ -66,9 +67,9 @@ class Queue:
     def is_full(self, n: int = 10):
         heap, L = self.heap, len(self.heap)
 
-        def count():
+        def count(i=0):
             # Hitung banyaknya non-background task di heap
-            if i >= L or heap[i] == 0:
+            if i >= L or heap[i][0] == 0:
                 return 0
             return 1 + count(2 * i + 1) + count(2 * i + 2)
 
@@ -78,7 +79,7 @@ class Queue:
         self.engine.stop()
         self._thread.join(timeout=3)
         self.engine.shutdown()
-        logger.info("Nice")
+        logger.info("Queue closed")
 
 
 app = Flask(__name__)
@@ -129,8 +130,8 @@ def uv_get_info(fen):
                 san = board.san(board.parse_uci(uci))
                 info["pv"].append(san)
                 board.push_uci(uci)
-    except:
-        logger.exception("Something went wrong")
+    except Exception as e:
+        logger.exception(str(e))
         raise
 
     return results
@@ -177,14 +178,15 @@ def uv_process_analysis():
     except Exception:
         return {"status": "Invalid PGN", "info": data["pgn"]}, 400
 
-    analysis = engine.info(fen, only_best=True, max_depth=0)
+    fen = board.epd()
+    analysis = queue.engine.info(fen, only_best=True, max_depth=0)
     if analysis and analysis[0]["depth"] > 35:
         return {
             "status": "Request denied.",
             "info": "cached data depth is deemed good enough.",
         }, 403
 
-    queue.put(board.epd(), priority=100)
+    queue.put(fen, priority=100)
     return {"status": "OK"}, 200
 
 

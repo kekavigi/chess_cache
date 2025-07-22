@@ -58,6 +58,7 @@ if __name__ == "__main__":
     DATABASE_URI = env.get("DATABASE_URI", ":memory:")
     ENGINE_CONFIG = env.get("IMPORTER_ENGINE_CONFIG", {"Thread": 4, "Hash": 1024})
     ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
+    MINIMAL_DEPTH = env.get('MINIMAL_DEPTH', 20)
     IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 8)
 
     pgn_file = "lichess_kekavigi_2025-07-11.pgn"

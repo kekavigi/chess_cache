@@ -10,9 +10,9 @@ from chess_cache.core import AnalysisEngine
 
 def create_engine(database_path: str) -> AnalysisEngine:
     return AnalysisEngine(
-        binary_path="engine/stockfish",
+        engine_path="engine/stockfish",
         database_path=database_path,
-        configs={
+        engine_configs={
             "EvalFile": "engine/nn-1c0000000000.nnue",
             "Threads": 4,
             "Hash": 1024,

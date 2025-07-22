@@ -112,7 +112,7 @@ def test_reset_db(db_file, db_memory_full):
 def test_normalize_old_data():
     try:
         ae = AnalysisEngine(
-            binary_path=env.get("ENGINE_PATH"), database_path=":memory:"
+            engine_path=env.get("ENGINE_PATH"), database_path=":memory:"
         )
 
         DEPTH = 20
@@ -128,6 +128,26 @@ def test_normalize_old_data():
         results = ae.db.sql.execute("SELECT depth FROM board").fetchall()
         results = set(_["depth"] for _ in results)
         assert results == set(range(1, 15 + 1))
+
+    finally:
+        ae.shutdown()
+
+def test_minimal_depth():
+    try:
+        DEPTH = 20
+        MINIMAL_DEPTH = 10
+
+        ae = AnalysisEngine(
+            engine_path=env.get("ENGINE_PATH"),
+            database_path=":memory:",
+            database_configs={'minimal_depth': 10}
+        )
+        ae.start(STARTING_FEN, depth=DEPTH)
+        ae.wait()
+
+        results = ae.db.sql.execute("SELECT depth FROM board").fetchall()
+        results = set(_["depth"] for _ in results)
+        assert results == set(range(MINIMAL_DEPTH, DEPTH + 1))
 
     finally:
         ae.shutdown()

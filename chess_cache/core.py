@@ -276,7 +276,7 @@ class Database:
         db: koneksi ke database SQLite
     """
 
-    def __init__(self, uri: str = ":memory:") -> None:
+    def __init__(self, uri: str = ":memory:", minimal_depth: int = 1) -> None:
         """Membuat koneksi ke database dengan URI `database`.
 
         Membuat instance `sqlite3.Connection`, yang dapat diakses oleh
@@ -294,6 +294,7 @@ class Database:
 
         Args:
             uri: URI lokasi database.
+            minimal_depth: Nilai depth minimal agar analisa dapat disinggah.
         """
 
         # TODO: bikin tabel version di database; jika < program, program raise Error
@@ -334,6 +335,9 @@ class Database:
                     move        INTEGER,
                     PRIMARY KEY (fen)
                     ) WITHOUT ROWID;
+
+                CREATE INDEX IF NOT EXISTS ix_covering
+                    ON board (depth, score);
                 """
         # PRAGMA cache_size = -4096000;
 
@@ -350,6 +354,9 @@ class Database:
             'SELECT file FROM pragma_database_list WHERE name="main"'
         )
         self._is_memory = not cur.fetchone()["file"]
+
+        # TODO: as kwargs?
+        self.minimal_depth = minimal_depth
 
     def close(self) -> None:
         "Menutup koneksi ke database."
@@ -419,7 +426,7 @@ class Database:
                 board.push(move)
                 efen = encode_fen(board.epd())
                 info = self.sql.execute(stt, (efen,)).fetchone()
-                if info:
+                if info and info['depth'] > 0:
                     info["score"] *= -1
                     info["depth"] += 1
                     info["pv"] = self._get_moves(board, max_depth - 1)
@@ -487,7 +494,7 @@ class Database:
 
         with self.sql as conn:
             for num, (fen, move) in enumerate(iters, start=start):  # type: ignore[assignment]
-                if info_["depth"] == 0:
+                if info_["depth"] < self.minimal_depth:
                     break
 
                 # bandingkan dengan hasil singgahan
@@ -583,26 +590,27 @@ class AnalysisEngine:
 
     def __init__(
         self,
-        binary_path: str = "./stockfish",
+        engine_path: str = "./stockfish",
         database_path: str = ":memory:",
-        configs: Config = {},
+        engine_configs: Config = {},
+        database_configs = {},
         **kwargs: Any,
     ):
         """Menginisialisasi mesin catur dan database.
 
         Args:
-            binary_path: Alamat dari mesin catur.
+            engine_path: Alamat dari mesin catur.
             database_path: Alamat dari berkas database SQLite.
             configs: Dict berisi UCI setoptions untuk dikirim ke
                 mesin catur.
         """
 
-        if not os_access(binary_path, F_OK):
+        if not os_access(engine_path, F_OK):
             raise FileNotFoundError("Engine tidak ditemukan.")
-        if not os_access(binary_path, X_OK):
+        if not os_access(engine_path, X_OK):
             raise PermissionError("Engine tidak executable.")
         self._engine = Popen(
-            binary_path,
+            engine_path,
             stdin=PIPE,
             stdout=PIPE,
             universal_newlines=True,
@@ -610,7 +618,7 @@ class AnalysisEngine:
         )
         self._thread: Thread | None = None
 
-        self.db = Database(database_path)
+        self.db = Database(database_path, **database_configs)
 
         assert self._engine.stdin is not None
         assert self._engine.stdout is not None
@@ -630,7 +638,7 @@ class AnalysisEngine:
         self._std_read = self._engine.stdout.readline
 
         self._std_write("uci\n")
-        self._set_options(configs)
+        self._set_options(engine_configs)
         self._stop = False
 
     def _set_options(self, configs: Config) -> None:
@@ -736,8 +744,8 @@ class AnalysisEngine:
                 self._stop = True
             except BrokenPipeError:
                 pass
-            except:
-                logger_engine.exception("Something went wrong.")
+            except Exception as e:
+                logger_engine.exception(str(e))
                 raise
 
         self._thread = Thread(target=process)
