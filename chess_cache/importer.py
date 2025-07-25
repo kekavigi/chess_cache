@@ -61,12 +61,12 @@ def extract_dump(
     filename: str,
     minimal_depth: int = 1,
     maximum_depth: int = 100,
-) -> list[Info]:
+) -> Database:
     """
     Mengekstrak berkas JSON dump Lichess.
 
-    Dump Lichess akan diekstraksi ke RAM, sehingga ada baiknya ukuran berkas
-    dibatasi.
+    Dump Lichess akan diekstraksi ke memori utama, sehingga
+    ada baiknya ukuran berkas dibatasi.
 
     Args:
         pgn: Teks PGN.
@@ -117,10 +117,7 @@ def extract_dump(
     # oleh mesin catur nantinya)
     db.normalize_old_data(cutoff_score=maximum_depth, new_score=maximum_depth - 2)
 
-    # TODO: optimalkan?
-    results = db.sql.execute("SELECT * FROM board").fetchall()
-    db.close()
-    return results
+    return db
 
 
 # import os
@@ -132,8 +129,6 @@ def extract_dump(
 # BATCH_SIZE = env.get("IMPORTER_BATCH", 1)
 # DUMP_DIR = env.get("LICHESS_DUMP_DIR", "dump")
 # MAXIMUM_DEPTH = env.get("ANALYSIS_DEPTH", 35)
-# if MAXIMUM_DEPTH < 35:  # hardcoded agar tidak teledor
-#     MAXIMUM_DEPTH = 35
 
 # IMPORT_STT = """
 #     INSERT INTO master.board AS mas
@@ -150,17 +145,11 @@ def extract_dump(
 # """
 
 
-# def path_to(fname: str) -> str:
-#     return os.path.join(DUMP_DIR, fname)
-
-
 # if __name__ == "__main__":
 #     if "fish.exit" in os.listdir():
 #         os.remove("fish.exit")
 
-#     logger = get_logger("importer")
-
-#     FILENAMES = [path_to(_) for _ in os.listdir(DUMP_DIR)]
+#     FILENAMES = [os.path.join(DUMP_DIR, _) for _ in os.listdir(DUMP_DIR)]
 
 #     for filenames in batched(FILENAMES, BATCH_SIZE):
 #         if "fish.exit" in os.listdir():
