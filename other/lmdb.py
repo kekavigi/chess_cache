@@ -1,5 +1,7 @@
+from pickle import dumps as pdump
+from pickle import loads as pload
+
 import lmdb
-from pickle import dumps as pdump, loads as pload
 
 
 class LMDB:

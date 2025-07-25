@@ -14,10 +14,10 @@ from functools import lru_cache
 from itertools import product
 from os import F_OK, X_OK
 from os import access as os_access
+from queue import Empty, PriorityQueue
 from re import compile as regex_compile
 from subprocess import PIPE, Popen
-from threading import Thread
-from time import sleep
+from threading import Event, Thread
 from typing import Any
 
 from chess import Board, IllegalMoveError
@@ -415,6 +415,8 @@ class Database:
 
         # https://stackoverflow.com/questions/15856976/transactions-with-python-sqlite3
         # sederhananya, jangan pakai executescript()
+
+        logger_db.info(f"Membuka database '{uri}'")
         with self.sql as conn:
             for stt in script.split(";"):
                 conn.execute(stt)
@@ -498,7 +500,7 @@ class Database:
                 board.push(move)
                 efen = encode_fen(board.epd())
                 info = self.sql.execute(stt, (efen,)).fetchone()
-                if info and info['depth'] > 0:
+                if info and info["depth"] > 0:
                     info["score"] *= -1
                     info["depth"] += 1
                     info["pv"] = self._get_moves(board, max_depth - 1)
@@ -653,8 +655,9 @@ class Database:
             logger_db.info("Normalisasi selesai")
 
 
-class AnalysisEngine:
-    """Mesin catur dengan database singgahan analisa posisi.
+class Engine:
+    """
+    Antarmuka mesin catur dengan database singgahan analisa posisi.
 
     Attributes:
         db: Instance dari `Database`.
@@ -662,25 +665,27 @@ class AnalysisEngine:
 
     def __init__(
         self,
-        engine_path: str = "./stockfish",
+        engine_path: str,
         database_path: str = ":memory:",
-        engine_configs: Config = {},
-        database_configs = {},
+        database_configs: dict[str, Any] = {},
+        debug: bool = False,
         **kwargs: Any,
     ):
-        """Menginisialisasi mesin catur dan database.
+        """
+        Menginisialisasi mesin catur dan database.
 
         Args:
             engine_path: Alamat dari mesin catur.
             database_path: Alamat dari berkas database SQLite.
-            configs: Dict berisi UCI setoptions untuk dikirim ke
-                mesin catur.
+            database_configs: Dict berisi konfigurasi database
+            debug: Opsi untuk menampilkan I/O ke/dari mesin catur
         """
 
+        # set mesin catur
         if not os_access(engine_path, F_OK):
             raise FileNotFoundError("Engine tidak ditemukan.")
         if not os_access(engine_path, X_OK):
-            raise PermissionError("Engine tidak executable.")
+            raise PermissionError("Engine tidak dapat dieksekusi.")
         self._engine = Popen(
             engine_path,
             stdin=PIPE,
@@ -688,141 +693,145 @@ class AnalysisEngine:
             universal_newlines=True,
             bufsize=1,
         )
-        self._thread: Thread | None = None
 
-        self.db = Database(database_path, **database_configs)
-
+        # set I/O dengan mesin catur
         assert self._engine.stdin is not None
         assert self._engine.stdout is not None
+        if debug:
 
-        def debug_write(text: str) -> None:
-            logger_engine.debug("stdin", extra={"raw": text})
-            self._engine.stdin.write(text)  # type: ignore
+            def debug_write(text: str) -> None:
+                logger_engine.debug("stdin", extra={"raw": text})
+                self._engine.stdin.write(text)  # type: ignore
 
-        def debug_read() -> str:
-            text = self._engine.stdout.readline()  # type: ignore
-            logger_engine.debug("stdout", extra={"raw": text})
-            return text
+            def debug_read() -> str:
+                text = self._engine.stdout.readline()  # type: ignore
+                logger_engine.debug("stdout", extra={"raw": text})
+                return text
 
-        # self._std_write = debug_write
-        # self._std_read = debug_read
-        self._std_write = self._engine.stdin.write
-        self._std_read = self._engine.stdout.readline
+            self._std_write = debug_write
+            self._std_read = debug_read
+        else:
+            self._std_write = self._engine.stdin.write
+            self._std_read = self._engine.stdout.readline
 
+        # lainnya
+        self.db = Database(database_path, **database_configs)
+        self.heap = PriorityQueue()
+
+        # mulai mesin catur
         self._std_write("uci\n")
-        self._set_options(engine_configs)
-        self._stop = False
 
-    def _set_options(self, configs: Config) -> None:
+        self._stop = Event()  # sinyal untuk menghentikan proses analisa
+
+        self._thread = Thread(target=self._process)
+        self._thread.daemon = True
+        self._thread.start()
+
+    def set_options(self, configs: Config) -> None:
+        "Mengirim dict berisi UCI setoptions ke mesin catur."
         for name, value in configs.items():
             self._std_write(f"setoption name {name} value {value}\n")
 
-    def stop(self, timeout: float = 1) -> None:
-        """Menghentikan proses analisa oleh mesin catur.
+    def is_full(self, n: int = 10):
+        "Menghasilkan perkiraan banyaknya antrian 'prioritas' di heap"
 
-        Disarankan untuk menetapkan `timeout` bernilai positif
-        karena dapat terjadi race-condition: mesin masih menghasilkan analisa
-        posisi lawas, sedangkan class mengharapkan analisa posisi baru.
+        heap = self.heap.queue
 
-        Args:
-            timeout: lama waktu maksimum untuk menunggu sinkronisasi
-                komunikasi dengan mesin catur.
+        def count(i=0):
+            # Hitung banyaknya non-background task di heap
+            if i >= len(heap) or heap[i][0] == 0:
+                return 0
+            return 1 + count(2 * i + 1) + count(2 * i + 2)
+
+        return count() >= n
+
+    def stop(self) -> None:
+        "Menghentikan proses analisa oleh mesin catur"
+        self._std_write("stop\n")
+        self._stop.set()
+        self._thread.join(timeout=1)
+
+    def wait(self) -> None:
+        "Menunggu sampai heap antrian analisa kosong."
+        self.heap.join()
+
+    def put(self, fen: str, depth: int, config: Config = {}, priority: int = 0):
         """
-        if self._thread and self._thread.is_alive():
-            self._stop = True
-            self._std_write("stop\n")
-            self._thread.join(timeout)
-        self._stop = False
-
-    def wait(self, delta: float = 1) -> None:
-        while not self._stop:
-            sleep(delta)
-
-    def start(
-        self, fen: str | list[str], depth: int | None = None, config: Config = {}
-    ) -> None:
-        """Memulai analisa posisi catur oleh mesin catur.
-
-        Config yang disertakan disini akan menimpa config yang ditetapkan
-        di __init__(), jika ada. Analisa lainnya yang berjalan, jika ada,
-        akan dihentikan.
+        Menambah posisi catur ke dalam antrian analisa.
 
         Args:
-            fen: (Daftar) posisi catur dalam notasi FEN.
+            fen: posisi catur dalam notasi FEN.
             depth: Nilai `depth` yang ingin dicari.
-            configs: Dict berisi UCI setoptions untuk dikirim ke mesin catur.
+            configs: Dict berisi UCI setoptions untuk dikirim ke mesin catur. Ini
+                akan menggantikan nilai setoptions sebelumnya, jika pernah ditetapkan.
+            priority: Tingkat prioritas analisa dalam antrian.
         """
+        assert isinstance(fen, str) and fen != ""
+        assert depth > 0
 
-        self.stop()
-        fens = [fen] if isinstance(fen, str) else fen
+        item = (-priority, fen, depth, config)
+        self.heap.put(item, block=False)
 
-        if len(fens) > 1 and depth is None:
-            # sanity-check biar ngga infinite loop
-            raise ValueError("Depth harus ada untuk analisa banyak FEN")
+    def _process(self) -> None:
+        "Menganalisa posisi catur dalam antrian"
 
-        def process() -> None:
-            try:
-                self._set_options(config)
+        try:
+            while not self._stop.is_set():
+                _, fen, depth, config = self.heap.get()
 
-                for fen in fens:
-                    self._std_write(f"position fen {fen}\n")
+                # cek apakah worth it untuk dianalisa
+                analysis = self.db.select(fen, only_best=True, max_depth=0)
+                if analysis and analysis[0]["depth"] >= depth:
+                    self.heap.task_done()
+                    continue
 
-                    # "flush" sampai dapat `readyok`
-                    _ = ""
-                    self._std_write("isready\n")
-                    while _ != "readyok" and not self._stop:
-                        _ = self._std_read().strip()
+                self.set_options(config)
+                self._std_write(f"position fen {fen}\n")
 
-                    if depth is not None and depth > 0:
-                        self._std_write(f"go depth {depth}\n")
-                    else:
-                        self._std_write("go infinite\n")
+                # "flush" sampai dapat `readyok`
+                _ = ""
+                self._std_write("isready\n")
+                while _ != "readyok" and not self._stop:
+                    _ = self._std_read().strip()
 
+                self._std_write(f"go depth {depth}\n")
+                logger_engine.debug(
+                    "analysis started",
+                    extra={"fen": fen, "config": config},
+                )
+
+                # proses output dari engine
+                while not self._stop.is_set():
+                    text = self._std_read().strip()
+                    if "bestmove" in text:
+                        # exit condition
+                        break
+                    if (
+                        ("score" not in text)
+                        or ("pv" not in text)
+                        or ("bound" in text)
+                        or text[:4] != "info"
+                    ):
+                        continue
+
+                    info = _parse_uci_info(text)
                     logger_engine.debug(
-                        "analysis started", extra={"fen": fen, "depth": depth}
+                        "stdin",
+                        extra={
+                            "multipv": info["multipv"],
+                            "depth": info["depth"],
+                            "pv0": info["pv"][0],
+                        },
                     )
+                    self.db.upsert(fen, info)
 
-                    # proses output dari engine
-                    while True:
-                        if self._stop:
-                            self._std_write("stop\n")
+                self.heap.task_done()
 
-                        text = self._std_read().strip()
-                        if "bestmove" in text:
-                            break
-                        if (
-                            ("score" not in text)
-                            or ("pv" not in text)
-                            or ("bound" in text)
-                            or text[:4] != "info"
-                        ):
-                            continue
-
-                        # logger_engine.debug("stdin", extra={"raw": text})
-
-                        info = _parse_uci_info(text)
-                        logger_engine.debug(
-                            "stdin",
-                            extra={
-                                "multipv": info["multipv"],
-                                "depth": info["depth"],
-                                "pv0": info["pv"][0],
-                            },
-                        )
-
-                        self.db.upsert(fen, info)
-
-                # untuk thread lain tahu bahwa proses sudah berhenti
-                self._stop = True
-            except BrokenPipeError:
-                pass
-            except Exception as e:
-                logger_engine.exception(str(e))
-                raise
-
-        self._thread = Thread(target=process)
-        self._thread.daemon = True
-        self._thread.start()
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            logger_engine.exception(str(e))
+            raise
 
     # TODO: cache?
     def info(self, fen: str, only_best: bool = False, max_depth: int = 1) -> list[Info]:
@@ -831,7 +840,7 @@ class AnalysisEngine:
     def shutdown(self) -> None:
         "Menghentikan mesin catur dan database."
 
-        # self.stop()
+        self.stop()
         self.db.close()
 
         if self._engine:

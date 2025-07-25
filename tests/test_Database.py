@@ -5,7 +5,7 @@ from time import sleep
 import pytest
 from chess import Board
 
-from chess_cache.core import STARTING_FEN, AnalysisEngine, Database
+from chess_cache.core import STARTING_FEN, Database, Engine
 from chess_cache.env import Env
 
 env = Env()
@@ -111,12 +111,10 @@ def test_reset_db(db_file, db_memory_full):
 
 def test_normalize_old_data():
     try:
-        ae = AnalysisEngine(
-            engine_path=env.get("ENGINE_PATH"), database_path=":memory:"
-        )
+        ae = Engine(engine_path=env.get("ENGINE_PATH"), database_path=":memory:")
 
         DEPTH = 20
-        ae.start(STARTING_FEN, depth=DEPTH)
+        ae.put(STARTING_FEN, DEPTH)
         ae.wait()
 
         results = ae.db.sql.execute("SELECT depth FROM board").fetchall()
@@ -132,17 +130,18 @@ def test_normalize_old_data():
     finally:
         ae.shutdown()
 
+
 def test_minimal_depth():
     try:
         DEPTH = 20
         MINIMAL_DEPTH = 10
 
-        ae = AnalysisEngine(
+        ae = Engine(
             engine_path=env.get("ENGINE_PATH"),
             database_path=":memory:",
-            database_configs={'minimal_depth': 10}
+            database_configs={"minimal_depth": 10},
         )
-        ae.start(STARTING_FEN, depth=DEPTH)
+        ae.put(STARTING_FEN, DEPTH)
         ae.wait()
 
         results = ae.db.sql.execute("SELECT depth FROM board").fetchall()

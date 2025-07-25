@@ -1,4 +1,5 @@
 from json import load as load_json
+from logging import ERROR
 from os import F_OK, X_OK
 from os import access as os_access
 from subprocess import PIPE, Popen
@@ -6,15 +7,14 @@ from threading import Thread
 
 from chess import Board
 
-from logging import ERROR
 from chess_cache.core import (
     STARTING_FEN,
     Database,
     Info,
     _parse_uci_info,
     _unparse_uci_info,
-    logger_engine,
     logger_db,
+    logger_engine,
 )
 
 logger_db.setLevel(ERROR)
