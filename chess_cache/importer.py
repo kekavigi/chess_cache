@@ -1,15 +1,23 @@
 from io import StringIO
+from json import loads
 
-from chess import Board
-from chess.pgn import Game, read_game
+from chess.pgn import read_game
 
-from .core import STARTING_FEN, Engine
+from .core import MATE_SCORE, STARTING_FEN, Database, Engine, Info
 from .logger import get_logger
 
 logger = get_logger("importer")
 
 
 def extract_fens(pgn: str, max_depth: int) -> list[str]:
+    """
+    Mencatat semua FEN unik sampai kedalaman max_depth di teks PGN
+
+    Args:
+        pgn: Teks PGN.
+        max_depth: kedalaman maksimum proses ekstraksi.
+    """
+
     _pgn = StringIO(pgn)
     boards = []
     while True:
@@ -49,11 +57,148 @@ def extract_fens(pgn: str, max_depth: int) -> list[str]:
     return [k for (k, v) in sorted(fens.items(), key=lambda tup: tup[1])]
 
 
+def extract_dump(
+    filename: str,
+    minimal_depth: int = 1,
+    maximum_depth: int = 100,
+) -> list[Info]:
+    """
+    Mengekstrak berkas JSON dump Lichess.
+
+    Dump Lichess akan diekstraksi ke RAM, sehingga ada baiknya ukuran berkas
+    dibatasi.
+
+    Args:
+        pgn: Teks PGN.
+        max_depth: kedalaman maksimum proses ekstraksi.
+    """
+
+    db = Database(":memory:", minimal_depth=minimal_depth)
+
+    with open(filename) as f:
+        for line in f:
+            raw = loads(line)
+
+            for eval in raw["evals"]:
+                data = []
+
+                # tambahkan data eval
+                for pv in eval["pvs"]:
+                    if "cp" in pv:
+                        score = pv["cp"]
+                    else:
+                        value = pv["mate"]
+                        if value > 0:
+                            score = MATE_SCORE - value
+                        else:
+                            score = -MATE_SCORE - value
+                    data.append(
+                        {
+                            "fen": raw["fen"],
+                            "depth": eval["depth"],
+                            "score": score,
+                            "pv": pv["line"].split(" "),
+                        }
+                    )
+
+                # urutkan untuk dapat multipv; lalu upsert
+                data.sort(key=lambda d: d["score"], reverse=True)
+                for i, info in enumerate(data, start=1):
+                    info["multipv"] = i
+                    try:
+                        db.upsert(info["fen"], info)
+                    except ValueError:
+                        # bukan analisa posisi catur standar
+                        continue
+
+    # anggap sebagian besar data Lichess usang, sehingga kita
+    # perlu menormalisasi analisa dengan depth > maximum_depth
+    # menjadi maximum_depth - 2 (sehingga mudah untuk diupdate
+    # oleh mesin catur nantinya)
+    db.normalize_old_data(cutoff_score=maximum_depth, new_score=maximum_depth - 2)
+
+    # TODO: optimalkan?
+    results = db.sql.execute("SELECT * FROM board").fetchall()
+    db.close()
+    return results
+
+
+# import os
+# from itertools import batched
+# from multiprocessing import Pool
+# from tqdm import tqdm
+
+# CPU_COUNT = env.get("IMPORTER_THREAD", 1)
+# BATCH_SIZE = env.get("IMPORTER_BATCH", 1)
+# DUMP_DIR = env.get("LICHESS_DUMP_DIR", "dump")
+# MAXIMUM_DEPTH = env.get("ANALYSIS_DEPTH", 35)
+# if MAXIMUM_DEPTH < 35:  # hardcoded agar tidak teledor
+#     MAXIMUM_DEPTH = 35
+
+# IMPORT_STT = """
+#     INSERT INTO master.board AS mas
+#             (fen, depth, score, move)
+#     SELECT   fen, depth, score, move
+#         FROM board AS mem
+#         WHERE TRUE
+#     ON CONFLICT (fen) DO
+#         UPDATE SET
+#             depth = excluded.depth,
+#             score = excluded.score,
+#             move  = excluded.move
+#         WHERE excluded.depth > mas.depth
+# """
+
+
+# def path_to(fname: str) -> str:
+#     return os.path.join(DUMP_DIR, fname)
+
+
+# if __name__ == "__main__":
+#     if "fish.exit" in os.listdir():
+#         os.remove("fish.exit")
+
+#     logger = get_logger("importer")
+
+#     FILENAMES = [path_to(_) for _ in os.listdir(DUMP_DIR)]
+
+#     for filenames in batched(FILENAMES, BATCH_SIZE):
+#         if "fish.exit" in os.listdir():
+#             logger.info("soft exit")
+#             break
+
+#         logger.info("reading dumps")
+#         db = Database(":memory:")
+#         with Pool(processes=CPU_COUNT) as pool:
+#             iter_ = pool.imap_unordered(process, filenames[::-1])
+#             for data in tqdm(iter_, total=BATCH_SIZE, ncols=0):
+#                 db.from_json(data)
+
+#         # UPSERT isi database :memory: dengan berkas database
+#         logger.info("upserting")
+#         db.sql.execute(f"ATTACH DATABASE 'lichess.sqlite' AS master")
+#         db.sql.execute(IMPORT_STT)
+
+#         logger.info("optimizing")
+#         db.sql.execute("ANALYZE master")
+#         db.sql.execute("DETACH master")
+#         db.close()
+
+#         # Delete setelah upsert berhasil
+#         logger.info("deleting dumps")
+#         for fname in filenames:
+#             os.remove(fname)
+
+#         logger.info("iteration complete")
+
+
 if __name__ == "__main__":
+    import argparse
+    import pathlib
+
     from .env import Env
 
     env = Env()
-
     ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
     DATABASE_URI = env.get("DATABASE_URI", ":memory:")
     ENGINE_CONFIG = env.get("IMPORTER_ENGINE_CONFIG", {"Thread": 4, "Hash": 1024})
@@ -61,8 +206,11 @@ if __name__ == "__main__":
     MINIMAL_DEPTH = env.get("MINIMAL_DEPTH", 20)
     IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 8)
 
-    pgn_file = "kekavigi.pgn"
-    with open(pgn_file) as f:
+    parser = argparse.ArgumentParser(prog="importer")
+    parser.add_argument("--pgn", type=pathlib.Path)
+    args = parser.parse_args()
+
+    with args.pgn.open("r") as f:
         fens = extract_fens(f.read(), max_depth=IMPORTER_PGN_DEPTH)
 
     try:

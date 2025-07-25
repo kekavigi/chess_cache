@@ -592,34 +592,6 @@ class Database:
                 info_["score"] *= -1  # ubah sudut pandang score
                 info_["depth"] -= 1  # kurangi depth
 
-    def to_json(self) -> list[Info]:
-        logger_db.info("Mengekspor data menjadi JSON")
-        cur = self.sql.execute("SELECT * FROM board")
-        results = []
-        for row in cur.fetchall():
-            row["fen"] = b85encode(row["fen"]).decode("utf-8")
-            results.append(row)
-        logger_db.info("Ekspor selesai")
-        return results
-
-    def from_json(self, json: list[Info]) -> None:
-        stt = """
-            INSERT INTO board (fen, depth, score, move)
-            VALUES (:fen, :depth, :score, :move)
-            ON CONFLICT (fen) DO UPDATE SET
-                depth = excluded.depth,
-                score = excluded.score,
-                move  = excluded.move
-            WHERE excluded.depth > depth
-        """
-        with self.sql as conn:
-            logger_db.info("Menambah data dari JSON")
-            for row_ in json:
-                row = row_.copy()
-                row["fen"] = b85decode(row["fen"])
-                conn.execute(stt, row)
-            logger_db.info("Tambah selesai")
-
     def reset_db(self) -> None:
         "Hapus seisi tabel board"
 

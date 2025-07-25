@@ -73,33 +73,6 @@ def test_sanity2(db_memory_empty):
     assert result["total"] == 0
 
 
-def test_to_json(db_memory_full):
-    db = db_memory_full
-    cur = db.sql.execute("SELECT COUNT(*) AS total FROM board")
-    total = cur.fetchone()["total"]
-
-    data = db.to_json()
-    assert len(data) == total
-
-
-def test_from_json(db_memory_empty, db_memory_full):
-    db_empty = db_memory_empty
-    db_full = db_memory_full
-
-    data_from = db_full.to_json()
-    db_empty.from_json(data_from)
-    data_dest = db_empty.to_json()
-    assert data_from == data_dest
-
-    data_from[0]["depth"] = 0
-    db_empty.from_json(data_from)
-    assert db_empty.to_json() == data_dest
-
-    data_from[0]["depth"] = 100
-    db_empty.from_json(data_from)
-    assert db_empty.to_json() != data_dest
-
-
 def test_reset_db(db_file, db_memory_full):
     with pytest.raises(RuntimeError):
         db_file.reset_db()
