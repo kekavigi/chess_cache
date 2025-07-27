@@ -112,7 +112,7 @@ def test_minimal_depth():
         ae = Engine(
             engine_path=env.get("ENGINE_PATH"),
             database_path=":memory:",
-            database_configs={"minimal_depth": 10},
+            minimal_depth=10,
         )
         ae.put(STARTING_FEN, DEPTH)
         ae.wait()

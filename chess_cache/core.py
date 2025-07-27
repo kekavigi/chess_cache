@@ -17,6 +17,7 @@ from os import access as os_access
 from queue import Empty, PriorityQueue
 from re import compile as regex_compile
 from subprocess import PIPE, Popen
+from select import select
 from threading import Event, Thread
 from typing import Any
 
@@ -428,8 +429,6 @@ class Database:
             'SELECT file FROM pragma_database_list WHERE name="main"'
         )
         self._is_memory = not cur.fetchone()["file"]
-
-        # TODO: as kwargs?
         self.minimal_depth = minimal_depth
 
     def close(self) -> None:
@@ -639,7 +638,6 @@ class Engine:
         self,
         engine_path: str,
         database_path: str = ":memory:",
-        database_configs: dict[str, Any] = {},
         debug: bool = False,
         **kwargs: Any,
     ):
@@ -649,8 +647,8 @@ class Engine:
         Args:
             engine_path: Alamat dari mesin catur.
             database_path: Alamat dari berkas database SQLite.
-            database_configs: Dict berisi konfigurasi database
             debug: Opsi untuk menampilkan I/O ke/dari mesin catur
+            **kwargs: Argumen tambahan untuk Database
         """
 
         # set mesin catur
@@ -660,10 +658,11 @@ class Engine:
             raise PermissionError("Engine tidak dapat dieksekusi.")
         self._engine = Popen(
             engine_path,
+            bufsize=1,
             stdin=PIPE,
             stdout=PIPE,
+            stderr=PIPE,
             universal_newlines=True,
-            bufsize=1,
         )
 
         # set I/O dengan mesin catur
@@ -674,6 +673,16 @@ class Engine:
             def debug_write(text: str) -> None:
                 logger_engine.debug("stdin", extra={"raw": text})
                 self._engine.stdin.write(text)  # type: ignore
+
+                # check jika hasil stdin menghasilkan stderr di mesin catur
+                rlist, _, _ = select([self._engine.stderr], [], [], 1)
+                if not rlist:
+                    return
+
+                # sebaiknya pakai while untuk pesan err *multiline*
+                err = self._engine.stderr.readline()
+                if err:
+                    raise BrokenPipeError(err)
 
             def debug_read() -> str:
                 text = self._engine.stdout.readline()  # type: ignore
@@ -687,7 +696,7 @@ class Engine:
             self._std_read = self._engine.stdout.readline
 
         # lainnya
-        self.db = Database(database_path, **database_configs)
+        self.db = Database(database_path, **kwargs)
         self.heap = PriorityQueue()
 
         # mulai mesin catur

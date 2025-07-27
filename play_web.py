@@ -1,5 +1,3 @@
-#!/home/user/.pyenv/shims/python
-
 import atexit
 import os
 from io import StringIO
@@ -8,10 +6,8 @@ from chess import Board
 from chess.pgn import read_game as read_pgn
 from flask import Flask, Request, render_template, request, send_from_directory
 
-from chess_cache.core import STARTING_FEN, Engine
-from chess_cache.env import Env
+from chess_cache import Engine, Env, get_logger, STARTING_FEN
 from chess_cache.importer import extract_fens
-from chess_cache.logger import get_logger
 
 env = Env(".env")
 logger = get_logger("flask")
@@ -30,9 +26,7 @@ ENGINE_CONFIG_MISC = env.get("IMPORTER_ENGINE_CONFIG", ENGINE_CONFIG_MAIN)
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1000 * 1000
 
-engine = Engine(
-    ENGINE_PATH, DATABASE_URI, database_configs={"minimal_depth": MINIMAL_DEPTH}
-)
+engine = Engine(ENGINE_PATH, DATABASE_URI, minimal_depth=MINIMAL_DEPTH)
 engine.set_options(ENGINE_CONFIG_MAIN)
 atexit.register(engine.shutdown)
 
