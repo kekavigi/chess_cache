@@ -43,14 +43,14 @@ function promotePawn(event, turn, move) {
 
 function requestAnalysis() {
     var xhttp = new XMLHttpRequest();
-    xhttp.open("POST", "/uv/analysis");
+    xhttp.open("POST", "/analyze");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
     const body = JSON.stringify({ pgn: game.pgn(), });
     xhttp.send(body);
 }
 
 function formSubmit(event) {
-  var url = "/uv/upload_pgn";
+  var url = "/upload_pgn";
   var request = new XMLHttpRequest();
   request.open('POST', url, true);
   request.onload = function() {
@@ -76,7 +76,7 @@ function updateStatus() {
         if (this.readyState == 4 && this.status == 200) {
             var results = JSON.parse(xhttp.responseText);
             var _html = "";
-            for (var info of results) {
+            for (var info of results.pvs) {
                 _html += "<li>";
                 _html += "<b title='depth'>" + info.depth + "</b> ";
                 _html += "<span title='score'>" + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + "</span> ";
@@ -85,7 +85,7 @@ function updateStatus() {
             document.getElementById("info").innerHTML = _html;
         }
     };
-    xhttp.open("GET", "/uv/info/" + fen, true);
+    xhttp.open("GET", "/eval?notation=san&fen=" + encodeURIComponent(fen), true);
     xhttp.send();
 }
 

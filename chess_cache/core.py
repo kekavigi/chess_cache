@@ -728,7 +728,7 @@ class Engine:
 
     def stop(self) -> None:
         "Menghentikan proses analisa oleh mesin catur"
-        self._std_write("stop\n")
+        # self._std_write("stop\n")
         self._stop.set()
         self._thread.join(timeout=1)
 
