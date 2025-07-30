@@ -699,6 +699,8 @@ class Engine:
         self.db = Database(database_path, **kwargs)
         self.heap = PriorityQueue()
 
+        self.info = self.db.select
+
         # mulai mesin catur
         self._std_write("uci\n")
 
@@ -761,8 +763,9 @@ class Engine:
                 _, fen, depth, config = self.heap.get()
 
                 # cek apakah worth it untuk dianalisa
-                analysis = self.db.select(fen, only_best=True, max_depth=0)
-                if analysis and analysis[0]["depth"] >= depth:
+                _analysis = self.info(fen, only_best=True, max_depth=0)
+                _deemed_good = sum(_["depth"] >= depth for _ in _analysis)
+                if _deemed_good >= config.get("MultiPV", 1):
                     self.heap.task_done()
                     continue
 
@@ -813,10 +816,6 @@ class Engine:
         except Exception as e:
             logger_engine.exception(str(e))
             raise
-
-    # TODO: cache?
-    def info(self, fen: str, only_best: bool = False, max_depth: int = 1) -> list[Info]:
-        return self.db.select(fen, only_best, max_depth)
 
     def shutdown(self) -> None:
         "Menghentikan mesin catur dan database."
