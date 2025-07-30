@@ -1,15 +1,17 @@
+import asyncio
 from contextlib import asynccontextmanager
 from io import StringIO
 
 from chess import Board
 from chess.pgn import read_game as read_pgn
 from starlette.applications import Starlette
-from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Route, Mount
+from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from chess_cache import STARTING_FEN, Engine, env, get_logger
 from chess_cache.importer import extract_fens
@@ -66,6 +68,7 @@ async def evaluation(request: Request):
     return JSONResponse({"fen": fen, "pvs": results})
 
 
+# TODO: ubah jadi PUT
 async def analyze(request: Request):
     if engine.is_full():
         return JSONResponse({"error": "Too many requests"}, 429)
@@ -125,7 +128,7 @@ async def parse_pgn(request: Request):
         except:
             return JSONResponse({"error": "unable to parse file"}, 415)
 
-        fens = await run_in_threadpool(extract_fens, pgn, IMPORTER_PGN_DEPTH)
+        fens = await asyncio.to_thread(extract_fens, pgn, IMPORTER_PGN_DEPTH)
         for fen in fens:
             engine.put(fen, ANALYSIS_DEPTH, config=ENGINE_CONFIG_MISC)
         return JSONResponse({"status": "OK"})
@@ -137,6 +140,50 @@ async def t_chessboard(request: Request):
     )
 
 
+async def t_quiz(request: Request):
+    # TODO: bikin token; simpan dalam bentuk db sqlite cache TTL 1 menit or bust.
+    return templates.TemplateResponse(request, "quiz.html")
+
+
+from chess_cache.core import decode_fen
+
+async def ws_ticket(websocket: WebSocket):
+    # baca db token
+    subproto = websocket.scope["subprotocols"]
+    if len(subproto) != 2 or subproto[0] != "Authorization" or subproto[1] != "token":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    await websocket.accept()
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+            _fen = engine.db.sql.execute(
+            """
+                SELECT fen FROM board
+                WHERE depth=35 AND score >= :min AND score <= :max
+                ORDER BY RANDOM()
+                LIMIT 1
+            """,
+            {'min': 100, 'max': 300}
+            ).fetchone()
+
+            if not _fen:
+                # no eligible fen
+                await websocket.close()
+                break
+
+            fen = decode_fen(_fen["fen"])
+            analysis = engine.info(fen)
+            await websocket.send_json({'fen': fen, 'analysis': analysis})
+            # TODO: update analysis to include more PVs
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        pass
+
+
 routes = [
     Route("/stats", endpoint=stats),
     Route("/eval", endpoint=evaluation),
@@ -145,8 +192,14 @@ routes = [
 ]
 
 routes += [
+    WebSocketRoute("/ws", endpoint=ws_ticket),
+]
+
+routes += [
     Route("/explore", endpoint=t_chessboard),
+    Route("/quiz", endpoint=t_quiz),
     Mount("/static", app=StaticFiles(directory="static"), name="static"),
 ]
+
 
 app = Starlette(lifespan=lifespan, routes=routes)
