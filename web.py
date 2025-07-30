@@ -5,6 +5,7 @@ from io import StringIO
 from chess import Board
 from chess.pgn import read_game as read_pgn
 from starlette.applications import Starlette
+from starlette.datastructures import UploadFile
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -13,7 +14,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from chess_cache import STARTING_FEN, Engine, env, get_logger
+from chess_cache import STARTING_FEN, Engine, env
 from chess_cache.importer import extract_fens
 
 ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
@@ -79,6 +80,7 @@ async def analyze(request: Request):
         return JSONResponse({"error": "Empty PGN"}, 400)
     try:
         game = read_pgn(StringIO(body["pgn"]))
+        assert game is not None
     except Exception:
         return JSONResponse({"error": "Failed parsing PGN"}, 400)
 
@@ -121,7 +123,7 @@ async def analyze(request: Request):
 async def parse_pgn(request: Request):
     async with request.form(max_files=1) as form:
         file = form.get("file")
-        if not file:
+        if not isinstance(file, UploadFile):
             return JSONResponse({"error": "No file"}, 400)
         try:
             pgn = (await file.read()).decode("utf-8")
@@ -147,6 +149,7 @@ async def t_quiz(request: Request):
 
 from chess_cache.core import decode_fen
 
+
 async def ws_ticket(websocket: WebSocket):
     # baca db token
     subproto = websocket.scope["subprotocols"]
@@ -159,13 +162,13 @@ async def ws_ticket(websocket: WebSocket):
             await websocket.receive_text()
 
             _fen = engine.db.sql.execute(
-            """
+                """
                 SELECT fen FROM board
                 WHERE depth=35 AND score >= :min AND score <= :max
                 ORDER BY RANDOM()
                 LIMIT 1
-            """,
-            {'min': 100, 'max': 300}
+                """,
+                {"min": 100, "max": 300},
             ).fetchone()
 
             if not _fen:
@@ -175,7 +178,7 @@ async def ws_ticket(websocket: WebSocket):
 
             fen = decode_fen(_fen["fen"])
             analysis = engine.info(fen)
-            await websocket.send_json({'fen': fen, 'analysis': analysis})
+            await websocket.send_json({"fen": fen, "analysis": analysis})
             # TODO: update analysis to include more PVs
 
     except WebSocketDisconnect:
@@ -189,13 +192,7 @@ routes = [
     Route("/eval", endpoint=evaluation),
     Route("/analyze", endpoint=analyze, methods=["POST"]),
     Route("/upload_pgn", endpoint=parse_pgn, methods=["POST"]),
-]
-
-routes += [
     WebSocketRoute("/ws", endpoint=ws_ticket),
-]
-
-routes += [
     Route("/explore", endpoint=t_chessboard),
     Route("/quiz", endpoint=t_quiz),
     Mount("/static", app=StaticFiles(directory="static"), name="static"),

@@ -1,7 +1,3 @@
-import os
-from shutil import copyfile
-from time import sleep
-
 import pytest
 from chess import Board
 

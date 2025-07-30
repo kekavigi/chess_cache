@@ -1,9 +1,4 @@
-import os
-from shutil import copyfile
-from time import sleep
-
 import pytest
-from chess import Board
 
 from chess_cache.core import STARTING_FEN, Database, Engine
 from chess_cache.env import Env

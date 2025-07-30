@@ -9,15 +9,14 @@ Menggabungkan kemampuan mesin catur dengan database hasil analisa posisi.
 # Spesifikasi protokol UCI: https://wbec-ridderkerk.nl/html/UCIProtocol.html
 
 import sqlite3
-from base64 import b85decode, b85encode
 from functools import lru_cache
 from itertools import product
 from os import F_OK, X_OK
 from os import access as os_access
-from queue import Empty, PriorityQueue
+from queue import PriorityQueue
 from re import compile as regex_compile
-from subprocess import PIPE, Popen
 from select import select
+from subprocess import PIPE, Popen
 from threading import Event, Thread
 from typing import Any
 
@@ -68,14 +67,13 @@ PIECE_MAP_ENCODE = {
 
 
 def uci_int_mapping() -> tuple[dict[str, int], dict[int, str]]:
-    possibles = (
+    possibles = set(
         [(0, y) for y in range(-7, 8)]
         + [(x, 0) for x in range(-7, 8)]
         + [(d, d) for d in range(-7, 8)]
         + [(d, -d) for d in range(-7, 8)]
         + list(product(range(-2, 3), range(-2, 3)))
-    )
-    possibles = set(possibles) - {(0, 0)}  # type: ignore[assignment]
+    ) - {(0, 0)}
 
     file = " abcdefgh"
     total = []
@@ -170,10 +168,10 @@ def encode_fen(fen: str) -> bytes:
     num = nibble << 64 | occupancy
     # ubah ke BLOB, num terlalu besar untuk SQLite
     bitcount = (bitcount + 7) // 8  # == ceil(log2(num))
-    return num.to_bytes(bitcount)
+    return num.to_bytes(bitcount, byteorder="big")
 
 
-def decode_fen(efen: bytes) -> str:
+def decode_fen(encoded: bytes) -> str:
     "Mendekompresi bytes menjadi notasi FEN, tanpa halfmove dan fullmove"
 
     fen: list[str] = []
@@ -183,7 +181,7 @@ def decode_fen(efen: bytes) -> str:
     en_passant = "-"
     blank_count = 0
 
-    efen = int.from_bytes(efen)
+    efen = int.from_bytes(encoded, byteorder="big")
     nibble = efen >> 64
     occupancy = (nibble << 64) ^ efen
 
@@ -566,12 +564,12 @@ class Database:
             start += 1
 
         with self.sql as conn:
-            for num, (fen, move) in enumerate(iters, start=start):  # type: ignore[assignment]
+            for num, (efen, move) in enumerate(iters, start=start):
                 if info_["depth"] < self.minimal_depth:
                     break
 
                 # bandingkan dengan hasil singgahan
-                _ = self.sql.execute(stt_info, (fen,)).fetchone() or {"depth": 0}
+                _ = self.sql.execute(stt_info, (efen,)).fetchone() or {"depth": 0}
                 old_depth = _["depth"]
 
                 if old_depth > info_["depth"]:
@@ -584,7 +582,7 @@ class Database:
                     # yang kita akan update hanyalah taksiran/ekstrapolasi
                     break
 
-                info_["fen"], info_["move"] = fen, move
+                info_["fen"], info_["move"] = efen, move
                 conn.execute(stt_upsert, info_)
 
                 # khusus untuk semua iterasi berikutnya; keturunannya
@@ -665,39 +663,43 @@ class Engine:
             universal_newlines=True,
         )
 
-        # set I/O dengan mesin catur
-        assert self._engine.stdin is not None
-        assert self._engine.stdout is not None
-        if debug:
+        # Set I/O dengan mesin catur
+        # Bagian ini bisa ditulis lebih ringkas, tetapi mypy menjengkelkan
+        _stdin = self._engine.stdin
+        _stdout = self._engine.stdout
+        _stderr = self._engine.stderr
+        assert _stdin is not None
+        assert _stdout is not None
+        assert _stderr is not None
 
-            def debug_write(text: str) -> None:
+        if not debug:
+            self._std_write = _stdin.write
+            self._std_read = _stdout.readline
+        else:
+
+            def debug_write(text: str) -> int:
                 logger_engine.debug("stdin", extra={"raw": text})
-                self._engine.stdin.write(text)  # type: ignore
+                count = _stdin.write(text)
 
-                # check jika hasil stdin menghasilkan stderr di mesin catur
-                rlist, _, _ = select([self._engine.stderr], [], [], 1)
-                if not rlist:
-                    return
-
-                # sebaiknya pakai while untuk pesan err *multiline*
-                err = self._engine.stderr.readline()
-                if err:
+                # check jika stdin menghasilkan stderr di mesin catur
+                rlist, _, _ = select([_stderr], [], [], 1)
+                if rlist:
+                    # sebaiknya pakai while untuk semua baris err
+                    err = _stderr.readline()
                     raise BrokenPipeError(err)
+                return count
 
-            def debug_read() -> str:
-                text = self._engine.stdout.readline()  # type: ignore
+            def debug_read(_: int = 0) -> str:
+                text = _stdout.readline()
                 logger_engine.debug("stdout", extra={"raw": text})
                 return text
 
             self._std_write = debug_write
             self._std_read = debug_read
-        else:
-            self._std_write = self._engine.stdin.write
-            self._std_read = self._engine.stdout.readline
 
         # lainnya
         self.db = Database(database_path, **kwargs)
-        self.heap = PriorityQueue()
+        self.heap = PriorityQueue()  # type: ignore[var-annotated]
 
         self.info = self.db.select
 
@@ -715,12 +717,12 @@ class Engine:
         for name, value in configs.items():
             self._std_write(f"setoption name {name} value {value}\n")
 
-    def is_full(self, n: int = 10):
+    def is_full(self, n: int = 10) -> bool:
         "Menghasilkan perkiraan banyaknya antrian 'prioritas' di heap"
 
         heap = self.heap.queue
 
-        def count(i=0):
+        def count(i: int = 0) -> int:
             # Hitung banyaknya non-background task di heap
             if i >= len(heap) or heap[i][0] == 0:
                 return 0
@@ -738,7 +740,7 @@ class Engine:
         "Menunggu sampai heap antrian analisa kosong."
         self.heap.join()
 
-    def put(self, fen: str, depth: int, config: Config = {}, priority: int = 0):
+    def put(self, fen: str, depth: int, config: Config = {}, priority: int = 0) -> None:
         """
         Menambah posisi catur ke dalam antrian analisa.
 

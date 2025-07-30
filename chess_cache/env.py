@@ -1,7 +1,8 @@
 import ast
 import os
-from configparser import UNNAMED_SECTION, ConfigParser
 from typing import Any
+
+from backports.configparser import UNNAMED_SECTION, ConfigParser
 
 
 class Env:

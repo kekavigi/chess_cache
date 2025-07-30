@@ -50,7 +50,7 @@ class UciEngine:
             logger_engine.warning("gagal membaca setting_path")
             settings = {}
 
-        binary_path = settings.get("binary_path")
+        binary_path = settings.get("binary_path", "stockfish")
         if not os_access(binary_path, F_OK):
             msg = "Engine tidak ditemukan"
             logger_engine.error(msg)

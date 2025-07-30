@@ -3,7 +3,7 @@ from json import loads
 
 from chess.pgn import read_game
 
-from .core import MATE_SCORE, STARTING_FEN, Database, Engine, Info
+from .core import MATE_SCORE, STARTING_FEN, Database, Engine
 from .logger import get_logger
 
 logger = get_logger("importer")
@@ -202,8 +202,8 @@ if __name__ == "__main__":
     with args.pgn.open("r") as f:
         fens = extract_fens(f.read(), max_depth=IMPORTER_PGN_DEPTH)
 
+    engine = Engine(ENGINE_PATH, DATABASE_URI)
     try:
-        engine = Engine(ENGINE_PATH, DATABASE_URI)
         engine.set_options(ENGINE_CONFIG)
         while fens:
             engine.put(fens.pop(), ANALYSIS_DEPTH)
