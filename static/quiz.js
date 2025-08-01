@@ -3,30 +3,15 @@ import { Chessboard, INPUT_EVENT_TYPE } from "./cb/Chessboard.js"
 import { PromotionDialog } from "./cb/extensions/promotion-dialog/PromotionDialog.js"
 import { Markers } from "./cb/extensions/markers/Markers.js"
 
-var ws = new WebSocket("ws://localhost:8000/ws", ["Authorization", "token"]);
 var data = {};
 var counter = 0;
 var game = new Chess();
 var board = new Chessboard(document.getElementById("myBoard"), {
-        position: data.fen,
-        assetsUrl: "/static/cb/assets/",
-        style: { pieces: { file: "pieces/standard.svg" } },
-        extensions: [{ class: PromotionDialog }, { class: Markers }]
-    })
-
-ws.onopen = function (e) {
-    ws.send('OK')
-}
-
-ws.onmessage = function (e) {
-    data = JSON.parse(e.data)
-    game = new Chess(data.fen)
-    board.setPosition(data.fen)
-    board.setOrientation(game.turn())
-
-    document.getElementById('fen').innerHTML = data.fen;
-    console.log(data)
-};
+    position: data.fen,
+    assetsUrl: "/static/cb/assets/",
+    style: { pieces: { file: "pieces/standard.svg" } },
+    extensions: [{ class: PromotionDialog }, { class: Markers }]
+})
 
 board.enableMoveInput((event) => {
     if (event.type === INPUT_EVENT_TYPE.validateMoveInput) {
@@ -40,14 +25,14 @@ board.enableMoveInput((event) => {
             game.undo()
             promotePawn(event, game.turn(), move);
         }
-        
-        var solution = data.analysis[0].pv[0]
-        var answer = move.from + move.to + (solution.length == 4 ? '' : move.promotion)
-        if (answer != solution) {
+
+        var solution = data.answers[0]
+        var submitted = move.from + move.to + (solution.length == 4 ? '' : move.promotion)
+        if (submitted != solution) {
             game.undo()
             return false
         }
-        
+
         updateStatus()
 
     } else if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
@@ -68,8 +53,27 @@ function promotePawn(event, turn, move) {
     });
 }
 
+function newQuiz() {
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+            data = JSON.parse(xhttp.responseText);
+            game = new Chess(data.fen)
+            board.setPosition(data.fen)
+            board.setOrientation(game.turn())
+
+            document.getElementById('fen').innerHTML = data.fen;
+            console.log(data)
+        }
+    };
+    xhttp.open("POST", "/get_quiz?min=100&max=300", true);
+    xhttp.send();
+};
+
 function updateStatus() {
     counter += 1
     console.log('solved', counter)
-    ws.send('OK')
+    newQuiz()
 }
+
+newQuiz()

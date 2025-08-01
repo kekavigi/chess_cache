@@ -7,15 +7,14 @@ from chess import Board
 from chess.pgn import read_game as read_pgn
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
-from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.routing import Mount, Route, WebSocketRoute
+from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
-from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from chess_cache import STARTING_FEN, Engine, env
+from chess_cache.core import decode_fen
 from chess_cache.importer import extract_fens
 
 ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
@@ -144,6 +143,38 @@ async def parse_pgn(request: Request) -> JSONResponse:
         return JSONResponse({"status": "OK"})
 
 
+async def get_quiz(request: Request) -> JSONResponse:
+    "Menghasilkan suatu posisi catur acak dan daftar solusi terbaiknya"
+
+    try:
+        _depth = 35
+        _min = int(request.query_params.get("min", 100))
+        _max = int(request.query_params.get("max", 300))
+        assert _min < _max
+    except (AssertionError, ValueError):
+        return JSONResponse({"error": "Invalid query param(s) usage"}, 400)
+    else:
+        _fen = engine.db.sql.execute(
+            """
+            SELECT fen FROM board
+            WHERE depth=:depth AND score >= :min AND score <= :max
+            ORDER BY RANDOM() LIMIT 1
+            """,
+            {"min": _min, "max": _max, "depth": _depth},
+        ).fetchone()
+
+    if not _fen:
+        # no eligible fen
+        return JSONResponse({})
+
+    fen = decode_fen(_fen["fen"])
+    answers = [engine.info(fen, only_best=True)[0]["pv"][0]]
+    # TODO: urus kasus ada beberapa PV bagus
+    # TODO: urus kasus PV punya depth yang berbeda-beda
+
+    return JSONResponse({"fen": fen, "answers": answers})
+
+
 async def t_chessboard(request: Request):
     return templates.TemplateResponse(
         request, "explore.html", context={"initial_fen": STARTING_FEN}
@@ -155,52 +186,12 @@ async def t_quiz(request: Request):
     return templates.TemplateResponse(request, "quiz.html")
 
 
-from chess_cache.core import decode_fen
-
-
-async def ws_ticket(websocket: WebSocket):
-    # baca db token
-    subproto = websocket.scope["subprotocols"]
-    if len(subproto) != 2 or subproto[0] != "Authorization" or subproto[1] != "token":
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    await websocket.accept()
-
-    try:
-        while True:
-            await websocket.receive_text()
-
-            _fen = engine.db.sql.execute(
-                """
-                SELECT fen FROM board
-                WHERE depth=35 AND score >= :min AND score <= :max
-                ORDER BY RANDOM()
-                LIMIT 1
-                """,
-                {"min": 100, "max": 300},
-            ).fetchone()
-
-            if not _fen:
-                # no eligible fen
-                await websocket.close()
-                break
-
-            fen = decode_fen(_fen["fen"])
-            analysis = engine.info(fen)
-            await websocket.send_json({"fen": fen, "analysis": analysis})
-            # TODO: update analysis to include more PVs
-
-    except WebSocketDisconnect:
-        pass
-    finally:
-        pass
-
-
 routes = [
     Route("/stats", endpoint=stats),
     Route("/eval", endpoint=evaluation),
     Route("/analyze", endpoint=analyze, methods=["PUT"]),
     Route("/upload_pgn", endpoint=parse_pgn, methods=["PUT"]),
-    WebSocketRoute("/ws", endpoint=ws_ticket),
+    Route("/get_quiz", endpoint=get_quiz, methods=["POST"]),
     Route("/explore", endpoint=t_chessboard),
     Route("/quiz", endpoint=t_quiz),
     Mount("/static", app=StaticFiles(directory="static"), name="static"),
