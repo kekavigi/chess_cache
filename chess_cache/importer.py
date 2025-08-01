@@ -185,15 +185,17 @@ if __name__ == "__main__":
     import argparse
     import pathlib
 
-    from .env import Env
+    from .env import (
+        ANALYSIS_DEPTH,
+        DATABASE_URI,
+        ENGINE_BASE_CONFIG,
+        ENGINE_MAIN_CONFIG,
+        ENGINE_PATH,
+        IMPORTER_PGN_DEPTH,
+        MINIMAL_DEPTH,
+    )
 
-    env = Env()
-    ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
-    DATABASE_URI = env.get("DATABASE_URI", ":memory:")
-    ENGINE_CONFIG = env.get("IMPORTER_ENGINE_CONFIG", {"Thread": 4, "Hash": 1024})
-    ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
-    MINIMAL_DEPTH = env.get("MINIMAL_DEPTH", 20)
-    IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 8)
+    ENGINE_CONFIG = ENGINE_BASE_CONFIG + ENGINE_MAIN_CONFIG
 
     parser = argparse.ArgumentParser(prog="importer")
     parser.add_argument("--pgn", type=pathlib.Path)

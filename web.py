@@ -13,19 +13,18 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from chess_cache import STARTING_FEN, Engine, env
+from chess_cache import STARTING_FEN, Engine
 from chess_cache.core import decode_fen
+from chess_cache.env import (
+    ANALYSIS_DEPTH,
+    DATABASE_URI,
+    ENGINE_BASE_CONFIG,
+    ENGINE_MAIN_CONFIG,
+    ENGINE_PATH,
+    IMPORTER_PGN_DEPTH,
+    MINIMAL_DEPTH,
+)
 from chess_cache.importer import extract_fens
-
-ENGINE_PATH = env.get("ENGINE_PATH", "stockfish")
-DATABASE_URI = env.get("DATABASE_URI", ":memory:")
-ANALYSIS_DEPTH = env.get("ANALYSIS_DEPTH", 35)
-MINIMAL_DEPTH = env.get("MINIMAL_DEPTH", 20)
-
-IMPORTER_PGN_DEPTH = env.get("IMPORTER_PGN_DEPTH", 50)
-ENGINE_CONFIG_MAIN = env.get("ENGINE_CONFIG", {})
-ENGINE_CONFIG_MISC = env.get("IMPORTER_ENGINE_CONFIG", ENGINE_CONFIG_MAIN)
-
 
 engine = Engine(ENGINE_PATH, DATABASE_URI, minimal_depth=MINIMAL_DEPTH)
 templates = Jinja2Templates(directory="templates")
@@ -34,7 +33,7 @@ templates = Jinja2Templates(directory="templates")
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncIterator[None]:
     # on start
-    engine.set_options(ENGINE_CONFIG_MAIN)
+    engine.set_options(ENGINE_BASE_CONFIG + ENGINE_MAIN_CONFIG)
 
     yield None
 
@@ -121,7 +120,7 @@ async def analyze(request: Request) -> JSONResponse:
             403,
         )
 
-    engine.put(fen, ANALYSIS_DEPTH, priority=100, config=ENGINE_CONFIG_MAIN)
+    engine.put(fen, ANALYSIS_DEPTH, priority=100)
     return JSONResponse({"status": "OK"})
 
 
@@ -139,7 +138,7 @@ async def parse_pgn(request: Request) -> JSONResponse:
 
         fens = await asyncio.to_thread(extract_fens, pgn, IMPORTER_PGN_DEPTH)
         for fen in fens:
-            engine.put(fen, ANALYSIS_DEPTH, config=ENGINE_CONFIG_MISC)
+            engine.put(fen, ANALYSIS_DEPTH)
         return JSONResponse({"status": "OK"})
 
 
