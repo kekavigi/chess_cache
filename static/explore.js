@@ -43,7 +43,7 @@ function promotePawn(event, turn, move) {
 
 function requestAnalysis() {
     var xhttp = new XMLHttpRequest();
-    xhttp.open("POST", "/analyze");
+    xhttp.open("PUT", "/analyze");
     xhttp.setRequestHeader("Content-Type", "application/json; charset=UTF-8")
     const body = JSON.stringify({ pgn: game.pgn(), });
     xhttp.send(body);
@@ -52,7 +52,7 @@ function requestAnalysis() {
 function formSubmit(event) {
   var url = "/upload_pgn";
   var request = new XMLHttpRequest();
-  request.open('POST', url, true);
+  request.open('PUT', url, true);
   request.onload = function() {
     console.log('nice', request.responseText);
   };

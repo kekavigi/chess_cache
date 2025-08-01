@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from io import StringIO
+from typing import AsyncIterator
 
 from chess import Board
 from chess.pgn import read_game as read_pgn
@@ -32,21 +33,25 @@ templates = Jinja2Templates(directory="templates")
 
 
 @asynccontextmanager
-async def lifespan(app: Starlette):
+async def lifespan(app: Starlette) -> AsyncIterator[None]:
     # on start
     engine.set_options(ENGINE_CONFIG_MAIN)
 
-    yield
+    yield None
 
     # on shutdown
     engine.shutdown()
 
 
-async def stats(request: Request):
+async def stats(request: Request) -> JSONResponse:
+    "Menghasilkan statistik mengenai program"
+
     return JSONResponse({"queue": engine.heap.qsize()})
 
 
-async def evaluation(request: Request):
+async def evaluation(request: Request) -> JSONResponse:
+    "Menghasilkan analisa suatu posisi"
+
     fen = request.query_params.get("fen")
     if not fen:
         return JSONResponse({"error": "Empty FEN"}, 400)
@@ -69,8 +74,9 @@ async def evaluation(request: Request):
     return JSONResponse({"fen": fen, "pvs": results})
 
 
-# TODO: ubah jadi PUT
-async def analyze(request: Request):
+async def analyze(request: Request) -> JSONResponse:
+    "Menganalisa posisi yang direpresentasikan dengan notasi PGN"
+
     if engine.is_full():
         return JSONResponse({"error": "Too many requests"}, 429)
 
@@ -120,7 +126,9 @@ async def analyze(request: Request):
     return JSONResponse({"status": "OK"})
 
 
-async def parse_pgn(request: Request):
+async def parse_pgn(request: Request) -> JSONResponse:
+    "Menganalisa semua posisi yang memenuhi syarat di berkas PGN"
+
     async with request.form(max_files=1) as form:
         file = form.get("file")
         if not isinstance(file, UploadFile):
@@ -190,8 +198,8 @@ async def ws_ticket(websocket: WebSocket):
 routes = [
     Route("/stats", endpoint=stats),
     Route("/eval", endpoint=evaluation),
-    Route("/analyze", endpoint=analyze, methods=["POST"]),
-    Route("/upload_pgn", endpoint=parse_pgn, methods=["POST"]),
+    Route("/analyze", endpoint=analyze, methods=["PUT"]),
+    Route("/upload_pgn", endpoint=parse_pgn, methods=["PUT"]),
     WebSocketRoute("/ws", endpoint=ws_ticket),
     Route("/explore", endpoint=t_chessboard),
     Route("/quiz", endpoint=t_quiz),
