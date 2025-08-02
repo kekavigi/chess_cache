@@ -26,6 +26,9 @@ from chess_cache.env import (
 )
 from chess_cache.importer import extract_fens
 
+ENGINE_CONFIG = ENGINE_BASE_CONFIG.copy()
+ENGINE_CONFIG.update(ENGINE_MAIN_CONFIG)
+
 engine = Engine(ENGINE_PATH, DATABASE_URI, minimal_depth=MINIMAL_DEPTH)
 templates = Jinja2Templates(directory="templates")
 
@@ -33,7 +36,7 @@ templates = Jinja2Templates(directory="templates")
 @asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncIterator[None]:
     # on start
-    engine.set_options(ENGINE_BASE_CONFIG + ENGINE_MAIN_CONFIG)
+    engine.set_options(ENGINE_CONFIG)
 
     yield None
 

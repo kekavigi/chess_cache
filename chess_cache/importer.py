@@ -195,7 +195,8 @@ if __name__ == "__main__":
         MINIMAL_DEPTH,
     )
 
-    ENGINE_CONFIG = ENGINE_BASE_CONFIG + ENGINE_MAIN_CONFIG
+    ENGINE_CONFIG = ENGINE_BASE_CONFIG.copy()
+    ENGINE_CONFIG.update(ENGINE_MAIN_CONFIG)
 
     parser = argparse.ArgumentParser(prog="importer")
     parser.add_argument("--pgn", type=pathlib.Path)
