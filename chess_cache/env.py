@@ -18,12 +18,13 @@ class Env:
     def get(self, varname: str, default: Any = None) -> Any:
         if varname in os.environ:
             logger.debug(f"Menggunakan '{varname}' dari os.environ")
-            return os.environ[varname]
-        if varname not in self.cp:
+            val = os.environ[varname]
+        elif varname in self.cp:
+            logger.debug(f"Menggunakan '{varname}' dari berkas enviroment")
+            val = self.cp[varname]
+        else:
             logger.debug(f"Menggunakan nilai default dari '{varname}'")
             return default
-        logger.debug(f"Menggunakan '{varname}' dari berkas enviroment")
-        val = self.cp[varname]
 
         # '123456' -> 123456
         # '"{'key':'value}"' -> "{'key':'value'}"

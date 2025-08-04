@@ -783,7 +783,11 @@ class Engine:
                 self._std_write(f"go depth {depth}\n")
                 logger_engine.debug(
                     "analysis started",
-                    extra={"fen": fen, "config": config},
+                    extra={
+                        "fen": fen,
+                        "config": config,
+                        "remaining": self.heap.qsize(),
+                    },
                 )
 
                 # proses output dari engine
