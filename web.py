@@ -1,4 +1,5 @@
 import asyncio
+import mimetypes
 from contextlib import asynccontextmanager
 from io import StringIO
 from typing import AsyncIterator
@@ -37,6 +38,12 @@ templates = Jinja2Templates(directory="templates")
 async def lifespan(app: Starlette) -> AsyncIterator[None]:
     # on start
     engine.set_options(ENGINE_CONFIG)
+
+    # https://stackoverflow.com/questions/60269909
+    mimetypes.init()
+    mimetypes.add_type('application/javascript', '.js')
+    mimetypes.add_type('text/css', '.css')
+    mimetypes.add_type('image/svg+xml', '.svg')
 
     yield None
 
@@ -177,7 +184,7 @@ async def get_quiz(request: Request) -> JSONResponse:
     return JSONResponse({"fen": fen, "answers": answers})
 
 
-async def t_chessboard(request: Request):
+async def t_explore(request: Request):
     return templates.TemplateResponse(
         request, "explore.html", context={"initial_fen": STARTING_FEN}
     )
@@ -194,7 +201,7 @@ routes = [
     Route("/analyze", endpoint=analyze, methods=["PUT"]),
     Route("/upload_pgn", endpoint=parse_pgn, methods=["PUT"]),
     Route("/get_quiz", endpoint=get_quiz, methods=["POST"]),
-    Route("/explore", endpoint=t_chessboard),
+    Route("/explore", endpoint=t_explore),
     Route("/quiz", endpoint=t_quiz),
     Mount("/static", app=StaticFiles(directory="static"), name="static"),
 ]
@@ -205,4 +212,4 @@ app = Starlette(lifespan=lifespan, routes=routes)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=9900)

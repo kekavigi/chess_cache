@@ -33,8 +33,8 @@ from .logger import get_logger
 
 # TODO: ketika Ctrl+C di AnalysisEngine, akan muncul "Exception ignored in" yang
 # saya tidak tahu cara mengatasinya. Kode berikut akan mensuppress pesan tersebut
-# https://stackoverflow.com/questions/16314321/suppressing-printout-of-exception-ignored-message-in-python-3
-# https://stackoverflow.com/questions/24169893/how-to-prevent-exception-ignored-in-module-threading-from-while-settin
+# https://stackoverflow.com/questions/16314321
+# https://stackoverflow.com/questions/24169893
 # import sys
 # sys.unraisablehook = lambda unraisable: None
 
@@ -412,7 +412,7 @@ class Database:
                 """
         # PRAGMA cache_size = -4096000;
 
-        # https://stackoverflow.com/questions/15856976/transactions-with-python-sqlite3
+        # https://stackoverflow.com/questions/15856976
         # sederhananya, jangan pakai executescript()
 
         logger_db.info(f"Membuka database '{uri}'")
