@@ -4,7 +4,6 @@ import { PromotionDialog } from "./cb/extensions/promotion-dialog/PromotionDialo
 import { Markers } from "./cb/extensions/markers/Markers.js"
 
 var data = {};
-var counter = 0;
 var game = new Chess();
 var board = new Chessboard(document.getElementById("myBoard"), {
     position: data.fen,
@@ -33,7 +32,7 @@ board.enableMoveInput((event) => {
             return false
         }
 
-        updateStatus()
+        new_quiz()
 
     } else if (event.type === INPUT_EVENT_TYPE.moveInputFinished) {
         event.chessboard.setPosition(game.fen(), true)
@@ -53,8 +52,11 @@ function promotePawn(event, turn, move) {
     });
 }
 
-function newQuiz() {
+function new_quiz() {
     var xhttp = new XMLHttpRequest();
+    var score_min = document.getElementById('minima').value
+    var score_max = document.getElementById('maxima').value
+
     xhttp.onreadystatechange = function () {
         if (this.readyState == 4 && this.status == 200) {
             data = JSON.parse(xhttp.responseText);
@@ -63,17 +65,40 @@ function newQuiz() {
             board.setOrientation(game.turn())
 
             document.getElementById('fen').innerHTML = data.fen;
-            console.log(data)
+            console.log(data.answers)
+
+            get_analysis(data.fen);
         }
     };
-    xhttp.open("POST", "/get_quiz?min=100&max=300", true);
+    xhttp.open("POST", "/get_quiz?min=" + score_min + "&max=" + score_max, true);
     xhttp.send();
 };
 
-function updateStatus() {
-    counter += 1
-    console.log('solved', counter)
-    newQuiz()
+function get_analysis(fen) {
+    // info multipv
+    var xhttp = new XMLHttpRequest();
+    xhttp.onreadystatechange = function () {
+        if (this.readyState == 4 && this.status == 200) {
+            var results = JSON.parse(xhttp.responseText);
+            var _html = "";
+            for (var info of results.pvs) {
+                _html += "<li>";
+                _html += "<b title='depth'>" + info.depth + "</b> ";
+                _html += "<span title='score'>" + (info.score >= 0 ? '+' : '') + (info.score / 100).toFixed(2) + "</span> ";
+                _html += "<em title='pv'>" + info.pv.map(item => `<span>${item}</span>`).join(' ') + "</em></li>";
+            }
+            document.getElementById("info").innerHTML = _html;
+        }
+    };
+    xhttp.open("GET", "/eval?notation=san&fen=" + encodeURIComponent(fen), true);
+    xhttp.send();
 }
 
-newQuiz()
+function formSubmit(event) {
+    // TODO: handle invalid input
+    event.preventDefault();
+    new_quiz()
+}
+
+new_quiz()
+document.getElementById("config").addEventListener("submit", formSubmit);

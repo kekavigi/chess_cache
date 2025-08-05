@@ -199,5 +199,10 @@ routes = [
     Mount("/static", app=StaticFiles(directory="static"), name="static"),
 ]
 
-
 app = Starlette(lifespan=lifespan, routes=routes)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)
