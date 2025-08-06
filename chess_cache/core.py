@@ -781,7 +781,7 @@ class Engine:
                     _ = self._std_read().strip()
 
                 self._std_write(f"go depth {depth}\n")
-                logger_engine.debug(
+                logger_engine.info(
                     "analysis started",
                     extra={
                         "fen": fen,

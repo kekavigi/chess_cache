@@ -41,9 +41,9 @@ async def lifespan(app: Starlette) -> AsyncIterator[None]:
 
     # https://stackoverflow.com/questions/60269909
     mimetypes.init()
-    mimetypes.add_type('application/javascript', '.js')
-    mimetypes.add_type('text/css', '.css')
-    mimetypes.add_type('image/svg+xml', '.svg')
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("text/css", ".css")
+    mimetypes.add_type("image/svg+xml", ".svg")
 
     yield None
 
