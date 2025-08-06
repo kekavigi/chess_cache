@@ -2,14 +2,14 @@ import asyncio
 import mimetypes
 from contextlib import asynccontextmanager
 from io import StringIO
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from chess import Board
 from chess.pgn import read_game as read_pgn
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, HTMLResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
@@ -26,6 +26,7 @@ from chess_cache.env import (
     MINIMAL_DEPTH,
 )
 from chess_cache.importer import extract_fens
+from chess_cache.logger import JSONFormatter
 
 ENGINE_CONFIG = ENGINE_BASE_CONFIG.copy()
 ENGINE_CONFIG.update(ENGINE_MAIN_CONFIG)
@@ -184,13 +185,13 @@ async def get_quiz(request: Request) -> JSONResponse:
     return JSONResponse({"fen": fen, "answers": answers})
 
 
-async def t_explore(request: Request):
+async def t_explore(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "explore.html", context={"initial_fen": STARTING_FEN}
     )
 
 
-async def t_quiz(request: Request):
+async def t_quiz(request: Request) -> HTMLResponse:
     # TODO: bikin token; simpan dalam bentuk db sqlite cache TTL 1 menit or bust.
     return templates.TemplateResponse(request, "quiz.html")
 
@@ -212,4 +213,47 @@ app = Starlette(lifespan=lifespan, routes=routes)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=9900)
+    # dimodifikasi dari uvicorn.config.LOGGING_CONFIG
+    LOGGING_CONFIG: dict[str, Any] = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "()": lambda: JSONFormatter(),
+            },
+            "access": {
+                "()": lambda: JSONFormatter(
+                    named_args=[
+                        "client_addr",
+                        "method",
+                        "full_path",
+                        "http_version",
+                        "status_code",
+                    ]
+                ),
+            },
+        },
+        "handlers": {
+            "default": {
+                "formatter": "default",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+            "access": {
+                "formatter": "access",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.error": {"level": "INFO"},
+            "uvicorn.access": {
+                "handlers": ["access"],
+                "level": "INFO",
+                "propagate": False,
+            },
+        },
+    }
+
+    uvicorn.run(app, host="127.0.0.1", port=9900, log_config=LOGGING_CONFIG)

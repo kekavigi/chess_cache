@@ -205,7 +205,7 @@ if __name__ == "__main__":
     with args.pgn.open("r") as f:
         fens = extract_fens(f.read(), max_depth=IMPORTER_PGN_DEPTH)
 
-    engine = Engine(ENGINE_PATH, DATABASE_URI)
+    engine = Engine(ENGINE_PATH, DATABASE_URI, minimal_depth=MINIMAL_DEPTH)
     try:
         engine.set_options(ENGINE_CONFIG)
         while fens:

@@ -18,8 +18,8 @@ def create_engine(database_path: str) -> Engine:
 
 @pytest.fixture
 def ae_file_empty(tmp_path):
+    engine = create_engine(f"file:///{tmp_path}/test.sqlite")
     try:
-        engine = create_engine(f"file:///{tmp_path}/test.sqlite")
         yield engine
     except:
         raise
